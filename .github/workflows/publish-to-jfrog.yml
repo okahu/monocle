@@ -15,7 +15,7 @@ on:
 
 jobs:
   publish-to-jfrog:
-    environment: ArtifactPublish
+    environment: Build
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout repository
@@ -80,7 +80,6 @@ jobs:
           echo "🔑 Authenticated as $JFROG_USERNAME"
           echo "🌐 Publishing to: $JFROG_URL"
           python3 -m twine upload \
-            --non-interactive --skip-existing \
             --repository-url "$JFROG_URL" dist/* \
             --username "$JFROG_USERNAME" --password "$JFROG_PASSWORD"
 
