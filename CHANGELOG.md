@@ -1,4 +1,4 @@
-## Version 0.6.0brc1 (2025-10-01)
+## Version 0.6.0b2 (2025-10-01)
 
 - Monocle testing framework ([#288](https://github.com/monocle2ai/monocle/pull/288))
 - Fix package version conflict ([#293](https://github.com/monocle2ai/monocle/pull/293))
