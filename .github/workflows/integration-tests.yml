@@ -160,9 +160,10 @@ jobs:
         if: always()
         id: run-integration-tests
         run: |
-          export PYTHONPATH=./apptrace/src:./apptrace/tests
+          cd apptrace
+          export PYTHONPATH=./src:./tests
           set -e
-          pytest -rfs apptrace/tests/integration/test*.py --tb=short | tee integration_test_result.log
+          pytest -rfs tests/integration/test*.py --tb=short | tee integration_test_result.log
           EXIT_CODE=${PIPESTATUS[0]}
           grep -E 'FAILED.*::' integration_test_result.log | cut -d ':' -f 1 | sort | uniq >> integrationtest_failed_files.txt
           echo "Failed Integration test files:"
