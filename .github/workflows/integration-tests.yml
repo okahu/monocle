@@ -221,9 +221,9 @@ jobs:
       - name: Prepare email content
         if: always()
         run: |
-          #cp apptrace/failed_files.txt ./
-          #cp apptrace/test_summary.txt ./
-          cd apptrace
+          cp apptrace/failed_files.txt ./
+          cp apptrace/test_summary.txt ./
+          
           # Determine test status
           if [[ -s ./failed_files.txt ]]; then
             echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
@@ -278,6 +278,6 @@ jobs:
           subject: Monocle Integration Test Results
           to: ashokan.perumal@okahu.ai
           from: ashokan.perumal@okahu.ai
-          body: file://apptrace/email_body.txt
+          body: file://email_body.txt
           attachments: test_summary.txt,failed_files.txt
 
