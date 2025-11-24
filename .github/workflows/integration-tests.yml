@@ -127,6 +127,7 @@ jobs:
       - name: Add Test Summary to Summary (Table)
         if: always()
         run: |
+          cd apptrace
           if [[ -s ./unittest_summary.txt ]]; then
             {
               echo "### Unit Test Summary"
@@ -142,6 +143,7 @@ jobs:
       - name: Add Failed Files to Summary (Table)
         if: always()
         run: |
+          cd apptrace
           if [[ -s ./unitfailed_files.txt ]]; then
             {
               echo "### ❌ Failed Unit Test Files"
@@ -185,7 +187,7 @@ jobs:
       - name: Add Test Summary to Summary (Table)
         if: always()
         run: |
-          pwd
+          cd apptrace
           if [[ -s ./integration_test_summary.txt ]]; then
             {
               echo "### Integration Test Summary"
@@ -201,6 +203,7 @@ jobs:
       - name: Add Failed Files to Summary (Table)
         if: always()
         run: |
+          cd apptrace
           if [[ -s ./integrationtest_failed_files.txt ]]; then
             {
               echo "### ❌ Integration Failed Test Files"
@@ -218,6 +221,9 @@ jobs:
       - name: Prepare email content
         if: always()
         run: |
+          #cp apptrace/failed_files.txt ./
+          #cp apptrace/test_summary.txt ./
+          cd apptrace
           # Determine test status
           if [[ -s ./failed_files.txt ]]; then
             echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
@@ -270,8 +276,8 @@ jobs:
           username: ${{ secrets.OKAHUGMAIL_USERNAME }}
           password: ${{ secrets.OKAHUGMAIL_APP_PASSWORD }}
           subject: Monocle Integration Test Results
-          to: ${{ secrets.EMAIL_TO }}
-          from: ${{ secrets.EMAIL_FROM }}
-          body: file://email_body.txt
+          to: ashokan.perumal@okahu.ai
+          from: ashokan.perumal@okahu.ai
+          body: file://apptrace/email_body.txt
           attachments: test_summary.txt,failed_files.txt
 
