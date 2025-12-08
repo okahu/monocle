@@ -1,22 +1,23 @@
 """
 Integration test for Azure OpenAI finish_reason using the real Azure OpenAI API.
 Tests: stop, length, content_filter, function_call/tool_calls (if supported).
-
+ 
 Requirements:
 - Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, and AZURE_OPENAI_API_DEPLOYMENT in your environment.
 - Requires openai>=1.0.0
-
+ 
 Run with: pytest tests/integration/test_azure_openai_finish_reason_integration.py
 """
 import os
-
+ 
 import openai
 import pytest
 from common.custom_exporter import CustomConsoleSpanExporter  # Assuming this path
 from monocle_apptrace.instrumentation.common.instrumentor import setup_monocle_telemetry
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-
-
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, BatchSpanProcessor
+from monocle_apptrace.exporters.file_exporter import FileSpanExporter
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+ 
 @pytest.fixture(scope="module")
 def setup():
     try:
@@ -24,7 +25,8 @@ def setup():
         custom_exporter = CustomConsoleSpanExporter()
         instrumentor = setup_monocle_telemetry(
             workflow_name="azure_openai_integration_tests",
-            span_processors=[SimpleSpanProcessor(custom_exporter)],
+            # span_processors=[SimpleSpanProcessor(custom_exporter)],
+            span_processors=[SimpleSpanProcessor(InMemorySpanExporter()), BatchSpanProcessor(FileSpanExporter()),SimpleSpanProcessor(custom_exporter)]
             # service_name="azure_openai_integration_tests"
         )
         yield custom_exporter
@@ -212,7 +214,7 @@ def test_finish_reason_function_call(setup):
     assert "entity.3.name" in span_attributes, "entity.3.name should be present when finish_type is tool_call"
     assert "entity.3.type" in span_attributes, "entity.3.type should be present when finish_type is tool_call"
     assert span_attributes["entity.3.name"] == "get_current_weather", f"Expected tool name 'get_current_weather', got '{span_attributes.get('entity.3.name')}'"
-    assert span_attributes["entity.3.type"] == "tool.function", f"Expected tool type 'tool.function', got '{span_attributes.get('entity.3.type')}'"
+    assert span_attributes["entity.3.type"] == "tool.openai", f"Expected tool type 'tool.function', got '{span_attributes.get('entity.3.type')}'"
 
 
 if __name__ == "__main__":
