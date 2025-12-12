@@ -119,7 +119,7 @@ def build_context(similar_documents):
                "and say that you don't know the answer if this is not something you can answer on your own."
 
 def search_similar_documents_opensearch(query):
-    opensearch_url = os.environ['OPENSEARCH_ENDPOINT_URL_BOTO']
+    opensearch_url = os.environ['OPENSEARCH_BEDROCK_ENDPOINT_URL_BOTO']
     index_name = "embeddings-bedrock"  # Your index name
 
     bedrock_embeddings = BedrockEmbeddings(region_name="us-east-1",model_id="amazon.titan-embed-text-v1")
