@@ -10,7 +10,7 @@ commands = [
 
 [project]
 name = "monocle_apptrace"
-version = "0.6.6"
+version = "0.7.0"
 authors = [
   { name="Okahu Inc.", email="okahu-pypi@okahu.ai" },
 ]
@@ -99,7 +99,7 @@ dev = [
   'azure-storage-blob==12.22.0', # this is for blob exporter
   'boto3==1.39.0', # this is for aws exporter
   'llama-index-vector-stores-opensearch==0.6.0',
-  'haystack-ai==2.21.0',
+  'haystack-ai==2.3.0',
   'llama-index-llms-azure-openai==0.4.0',
   'requests-aws4auth==1.2.3',
   'opensearch-haystack==1.2.0',
