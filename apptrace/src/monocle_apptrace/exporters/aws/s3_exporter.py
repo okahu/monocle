@@ -13,7 +13,7 @@ from botocore.exceptions import (
 )
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-from monocle_apptrace.exporters.base_exporter import SpanExporterBase
+from monocle_apptrace.exporters.base_exporter import SpanExporterBase, format_trace_id_without_0x
 from monocle_apptrace.exporters.exporter_processor import ExportTaskProcessor
 from typing import Sequence, Optional, Dict, List, Tuple
 import json
@@ -127,9 +127,9 @@ class S3SpanExporter(SpanExporterBase):
         serialized_data = self.__serialize_spans(spans)
         if serialized_data:
             try:
-                self.__upload_to_s3_with_trace_id(serialized_data, trace_id)
+                self.__upload_to_s3_with_trace_id(span_data_batch=serialized_data, trace_id=trace_id)
             except Exception as e:
-                logger.error(f"Failed to upload trace {hex(trace_id)}: {e}")
+                logger.error(f"Failed to upload trace {format_trace_id_without_0x(trace_id)}: {e}")
         
         del self.trace_spans[trace_id]
 
@@ -181,7 +181,11 @@ class S3SpanExporter(SpanExporterBase):
                         spans_to_upload, _, _ = self.trace_spans[trace_id]
                         serialized_data = self.__serialize_spans(spans_to_upload)
                         if serialized_data:
-                            self.task_processor.queue_task(self.__upload_to_s3_with_trace_id, serialized_data, trace_id, True)
+                            self.task_processor.queue_task(
+                                self.__upload_to_s3_with_trace_id,
+                                kwargs={'span_data_batch': serialized_data, 'trace_id': trace_id},
+                                is_root_span=True
+                            )
                         del self.trace_spans[trace_id]
                 else:
                     self._upload_trace(trace_id)
@@ -210,17 +214,17 @@ class S3SpanExporter(SpanExporterBase):
             return ""
 
     @SpanExporterBase.retry_with_backoff(exceptions=(EndpointConnectionError, ConnectionClosedError, ReadTimeoutError, ConnectTimeoutError))
-    def __upload_to_s3_with_trace_id(self, span_data_batch: str, trace_id: int):
+    def __upload_to_s3_with_trace_id(self, span_data_batch: str, trace_id: int) -> None:
         """Upload spans for a specific trace to S3 with trace ID in filename."""
         current_time = datetime.datetime.now().strftime(self.time_format)
         prefix = self.file_prefix + os.environ.get('MONOCLE_S3_KEY_PREFIX_CURRENT', '')
-        file_name = f"{prefix}{current_time}_{hex(trace_id)}.ndjson"
+        file_name = f"{prefix}{current_time}_{format_trace_id_without_0x(trace_id)}.ndjson"
         self.s3_client.put_object(
             Bucket=self.bucket_name,
             Key=file_name,
             Body=span_data_batch
         )
-        logger.debug(f"Trace {hex(trace_id)} uploaded to AWS S3 as {file_name}.")
+        logger.debug(f"Trace {format_trace_id_without_0x(trace_id)} uploaded to AWS S3 as {file_name}.")
 
     async def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Flush all pending traces to S3."""

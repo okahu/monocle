@@ -13,7 +13,7 @@ from monocle_test_tools.comparer.comparer_manager import get_comparer
 class SpanType(str, Enum):
     TOOL_INVOCATION = "agentic.tool.invocation"
     AGENTIC_INVOCATION = "agentic.invocation"
-    AGENTIC_REQUEST = "agentic.request"
+    AGENTIC_REQUEST = "agentic.turn"
     AGENTIC_DELEGATION = "agentic.delegation"
     INFERENCE = "inference"
 
