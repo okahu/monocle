@@ -60,6 +60,7 @@ jobs:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.EXPORTER_GITHUB_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -100,7 +101,11 @@ jobs:
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
-
+          pip install -e '.[dev_tranformers]'
+          pip install -e '.[dev_gemini]'
+          pip install -e '.[dev_strands]'
+          pip install https://okahu.jfrog.io/artifactory/okahu-patch-pypi/monocle-apptrace/0.7.0b3/monocle_apptrace-0.7.0b3-py3-none-any.whl
+          
       - name: Run Unit tests
         id: run-unit-tests
         run: |
