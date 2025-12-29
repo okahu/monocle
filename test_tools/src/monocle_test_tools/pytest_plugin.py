@@ -1,0 +1,48 @@
+import pytest
+from .fluent_api import TraceAssertion
+
+@pytest.fixture()
+def monocle_trace_asserter(request:pytest.FixtureRequest):
+    """
+    Provides a fresh TraceAssertion instance for each test.
+    
+    This fixture automatically handles cleanup and ensures test isolation.
+    Each test gets its own clean asserter with cleared memory and empty spans.
+    
+    Example:
+        def test_my_agent(monocle_trace_asserter):
+            monocle_trace_asserter.run_agent(my_agent, "google_adk", "my_task")
+            
+            # Make assertions
+            monocle_trace_asserter.called_tool("my_tool") \\
+                .has_input("expected input") \\
+                .contains_output("expected output")
+    """
+    traceAssertion = TraceAssertion.get_trace_asserter()
+    token = traceAssertion.validator.pre_test_run_setup(request.node.name)
+    try:
+        result = yield traceAssertion
+    finally:
+        traceAssertion.validator.post_test_cleanup(token, request.node.name, _is_test_failed(request))
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture test reports and modify based on trace assertions."""
+    outcome = yield
+    rep = outcome.get_result()
+    
+    # Store report
+    setattr(item, f"rep_{rep.when}", rep)
+    
+    # After test call phase, check trace assertions
+    if rep.when == "call" and rep.outcome == "passed":
+        traceAssertion:TraceAssertion = TraceAssertion()
+        if traceAssertion.has_assertions():
+            rep.outcome = "failed"
+
+            rep.longrepr = traceAssertion.get_assertion_messages()
+
+
+def _is_test_failed(request:pytest.FixtureRequest) -> bool:
+    """Check if the test has failed based on the pytest request object."""
+    return request.node.rep_call.passed == False if hasattr(request.node, "rep_call") else False

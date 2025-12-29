@@ -13,9 +13,11 @@ from monocle_apptrace.instrumentation.metamodel.llamaindex.methods import (LLAMA
 from monocle_apptrace.instrumentation.metamodel.llamaindex.llamaindex_processor import LlamaIndexToolHandler, LlamaIndexAgentHandler, LlamaIndexSingleAgenttToolHandlerWrapper
 from monocle_apptrace.instrumentation.metamodel.haystack.methods import (HAYSTACK_METHODS, )
 from monocle_apptrace.instrumentation.metamodel.openai.methods import (OPENAI_METHODS,)
-from monocle_apptrace.instrumentation.metamodel.openai._helper import OpenAISpanHandler
+from monocle_apptrace.instrumentation.metamodel.openai.openai_processor import ( OpenAISpanHandler, OpenAIAgentsSpanHandler)
 from monocle_apptrace.instrumentation.metamodel.langgraph.methods import LANGGRAPH_METHODS
 from monocle_apptrace.instrumentation.metamodel.langgraph.langgraph_processor import LanggraphAgentHandler, LanggraphToolHandler
+from monocle_apptrace.instrumentation.metamodel.crew_ai.methods import CREW_AI_METHODS
+from monocle_apptrace.instrumentation.metamodel.crew_ai.crew_ai_processor import CrewAIAgentHandler, CrewAITaskHandler, CrewAIToolHandler
 from monocle_apptrace.instrumentation.metamodel.agents.methods import AGENTS_METHODS
 from monocle_apptrace.instrumentation.metamodel.agents.agents_processor import AgentsSpanHandler
 from monocle_apptrace.instrumentation.metamodel.flask.methods import (FLASK_METHODS, )
@@ -39,9 +41,10 @@ from monocle_apptrace.instrumentation.metamodel.mcp.mcp_processor import MCPAgen
 from monocle_apptrace.instrumentation.metamodel.a2a.methods import A2A_CLIENT_METHODS
 from monocle_apptrace.instrumentation.metamodel.litellm.methods import LITELLM_METHODS
 from monocle_apptrace.instrumentation.metamodel.adk.methods import ADK_METHODS
+from monocle_apptrace.instrumentation.metamodel.adk.adk_handler import AdkSpanHandler
 from monocle_apptrace.instrumentation.metamodel.mistral.methods import MISTRAL_METHODS
 from monocle_apptrace.instrumentation.metamodel.strands.methods import STRAND_METHODS
-from monocle_apptrace.instrumentation.metamodel.adk._helper import AdkSpanHandler
+from monocle_apptrace.instrumentation.metamodel.strands.strands_processor import StrandsSpanHandler
 
 class WrapperMethod:
     def __init__(
@@ -99,6 +102,7 @@ DEFAULT_METHODS_LIST = (
     FLASK_METHODS + 
     REQUESTS_METHODS + 
     LANGGRAPH_METHODS + 
+    CREW_AI_METHODS +
     AGENTS_METHODS +
     OPENAI_METHODS + 
     TEAMAI_METHODS +
@@ -128,16 +132,21 @@ MONOCLE_SPAN_HANDLERS: Dict[str, SpanHandler] = {
     "request_handler": RequestSpanHandler(),
     "non_framework_handler": NonFrameworkSpanHandler(),
     "openai_handler": OpenAISpanHandler(),
+    "openai_agents_handler": OpenAIAgentsSpanHandler(),
     "azure_func_handler": azureSpanHandler(),
     "mcp_agent_handler": MCPAgentHandler(),
     "fastapi_handler": FastAPISpanHandler(),
     "fastapi_response_handler": FastAPIResponseSpanHandler(),
     "langgraph_agent_handler": LanggraphAgentHandler(),
     "langgraph_tool_handler": LanggraphToolHandler(),
+    "crew_ai_agent_handler": CrewAIAgentHandler(),
+    "crew_ai_task_handler": CrewAITaskHandler(),
+    "crew_ai_tool_handler": CrewAIToolHandler(),
     "agents_agent_handler": AgentsSpanHandler(),
     "llamaindex_tool_handler": LlamaIndexToolHandler(),
     "llamaindex_agent_handler": LlamaIndexAgentHandler(),
     "llamaindex_single_agent_tool_handler": LlamaIndexSingleAgenttToolHandlerWrapper(),
     "lambda_func_handler": lambdaSpanHandler(),
-    "adk_handler": AdkSpanHandler()
+    "adk_handler": AdkSpanHandler(),
+    "strands_handler": StrandsSpanHandler()
 }
