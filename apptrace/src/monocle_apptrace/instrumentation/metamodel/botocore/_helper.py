@@ -9,6 +9,8 @@ from io import BytesIO
 from functools import wraps
 
 from rfc3986 import urlparse
+from opentelemetry.context import get_value
+from monocle_apptrace.instrumentation.common.constants import AGENT_PREFIX_KEY, INFERENCE_AGENT_DELEGATION, INFERENCE_TOOL_CALL, INFERENCE_TURN_END, TOOL_TYPE
 from monocle_apptrace.instrumentation.common.span_handler import SpanHandler
 from monocle_apptrace.instrumentation.common.utils import ( get_exception_message, get_json_dumps, get_status_code,)
 from monocle_apptrace.instrumentation.metamodel.finish_types import map_bedrock_finish_reason_to_finish_type
@@ -65,6 +67,10 @@ def extract_assistant_message(arguments):
                 if isinstance(content, list) and len(content) > 0 and "text" in content[0]:
                     reply = content[0]["text"]
                     messages.append({role: reply})
+                else:
+                    tool_call = _get_first_tool_call(arguments['result'])
+                    if tool_call is not None:
+                        messages.append({role: str(tool_call['toolUse']['input'])})
         else:
             if arguments["exception"] is not None:
                 return get_exception_message(arguments)
@@ -76,15 +82,15 @@ def extract_assistant_message(arguments):
         return []
 
 
-def extract_query_from_content(content):
+def extract_query_from_content(content:str) -> str:
     try:
         query_prefix = "Query:"
         answer_prefix = "Answer:"
         query_start = content.find(query_prefix)
-        if query_start == -1:
-            return None
-
-        query_start += len(query_prefix)
+        if query_start != -1:
+            query_start += len(query_prefix)
+        else:
+            query_start = None
         answer_start = content.find(answer_prefix, query_start)
         if answer_start == -1:
             query = content[query_start:].strip()
@@ -203,13 +209,14 @@ def extract_provider_name(instance):
     return urlparse(instance.meta.endpoint_url).hostname
 
 def _get_first_tool_call(response):
-    """Helper function to extract the first tool call from various LangChain response formats"""
+    """Helper function to extract the first tool call from various Boto response formats"""
     with suppress(AttributeError, IndexError, TypeError):
         if "output" in response and "message" in response["output"]:
             message = response["output"]["message"]
             if "content" in message and isinstance(message["content"], list):
-                for content_block in message["content"]:
-                    return content_block
+                for content_block in reversed(message["content"]):
+                    if "toolUse" in content_block:
+                        return content_block
 
     return None
 
@@ -246,9 +253,29 @@ def extract_tool_type(arguments):
 
         tool_name = extract_tool_name(arguments)
         if tool_name:
-            return "tool.function"
+            return TOOL_TYPE
 
     except Exception as e:
         logger.warning("Warning: Error occurred in extract_tool_type: %s", str(e))
 
     return None
+
+def agent_inference_type(arguments):
+    """Extract agent inference type from Bedrock response"""
+    try:
+        # Check finish_type to determine the inference type
+        finish_type = map_finish_reason_to_finish_type(extract_finish_reason(arguments))
+        
+        if finish_type == "tool_call":
+            tool_call = _get_first_tool_call(arguments["result"])
+            if tool_call:
+                tool_name = tool_call.get("toolUse", {}).get("name", "")
+                agent_prefix = get_value(AGENT_PREFIX_KEY)
+                if agent_prefix and tool_name.startswith(agent_prefix):
+                    return INFERENCE_AGENT_DELEGATION
+            return INFERENCE_TOOL_CALL
+        
+        return INFERENCE_TURN_END
+    except Exception as e:
+        logger.warning("Warning: Error occurred in agent_inference_type: %s", str(e))
+        return INFERENCE_TURN_END

@@ -4,18 +4,23 @@ import inspect
 import uuid
 import jsonschema, json
 from typing import Optional, Union
-from opentelemetry.sdk.trace import Span, ReadableSpan, StatusCode
+from opentelemetry.sdk.trace import Span, StatusCode
+from opentelemetry.sdk.trace.export import SpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.context import set_value, attach, detach, get_value
+from opentelemetry.sdk.trace.export import SpanExporter
+from opentelemetry.context import set_value, Context
 import pytest
 #from sqlalchemy import func
 from monocle_apptrace.exporters.file_exporter import FileSpanExporter, DEFAULT_TRACE_FOLDER
+from monocle_apptrace import start_scopes, stop_scope
 from contextlib import contextmanager, asynccontextmanager
 import logging
-from monocle_apptrace.instrumentation.common.instrumentor import MonocleInstrumentor, setup_monocle_telemetry
+from monocle_apptrace.exporters.monocle_exporters import get_monocle_exporter
+from monocle_apptrace.instrumentation.common.instrumentor import MonocleInstrumentor, setup_monocle_telemetry, reset_span_processors, get_monocle_instrumentor
 from pydantic import BaseModel, ValidationError
-from monocle_test_tools.schema import SpanType, TestSpan, TestCase, Evaluation, EvalInputs, MockTool, ToolType
+from monocle_test_tools.gitutils import get_git_context, get_repo_name
+from monocle_test_tools.schema import SpanType, TestSpan, TestCase, Evaluation, EvalInputs, MockTool
+from monocle_test_tools.constants import TEST_SCOPE_NAME, DEFAULT_WORKFLOW_NAME
 from monocle_test_tools.comparer.base_comparer import BaseComparer
 from monocle_test_tools.runner.runner import get_agent_runner
 from monocle_test_tools import trace_utils
@@ -35,21 +40,54 @@ class MonocleValidator:
     instrumentor: MonocleInstrumentor = None
     _instance = None
     _initialized = False
+    exporters:list[SpanExporter] = []
+    export_failed_tests_only: bool = False
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, exporter_list:Optional[str] = None, export_failed_tests_only:Optional[bool] = None,
+                    workflow_name:str=None):
         if MonocleValidator._initialized:
+            if exporter_list is not None:
+                raise ValueError("Exporter list can only be set during the first initialization of MonocleValidator.")
             return
         test_trace_path:str = os.path.join(".", DEFAULT_TRACE_FOLDER, "test_traces")
+        os.environ["MONOCLE_TRACE_OUTPUT_PATH"] = test_trace_path
+        if exporter_list is None:
+            exporter_list = os.getenv("MONOCLE_EXPORTER", "file")
+        self.exporters = get_monocle_exporter(exporter_list)
         self.memory_exporter = InMemorySpanExporter()
-        self.file_exporter = FileSpanExporter(out_path=test_trace_path)
-        span_processors = [SimpleSpanProcessor(self.file_exporter), SimpleSpanProcessor(self.memory_exporter)]
-        self.instrumentor = setup_monocle_telemetry(workflow_name="monocle_validator", span_processors=span_processors)
+        if export_failed_tests_only is None:
+            export_failed_tests_only = os.getenv("MONOCLE_EXPORT_FAILED_TESTS_ONLY", "false").lower() == "true"
+        if workflow_name is None:
+            workflow_name = os.getenv("MONOCLE_TEST_WORKFLOW_NAME")
+            if workflow_name is None:
+                workflow_name = get_repo_name() or DEFAULT_WORKFLOW_NAME
+        self.export_failed_tests_only = export_failed_tests_only
+        if get_monocle_instrumentor() is None:
+            self.instrumentor = setup_monocle_telemetry(workflow_name=workflow_name,
+                                        span_processors=[SimpleSpanProcessor(self.memory_exporter)])
+        else:
+            self.instrumentor = get_monocle_instrumentor()
+            reset_span_processors([SimpleSpanProcessor(self.memory_exporter)])
         MonocleValidator._initialized = True
+
+    def __del__(self):
+        for exporter in self.exporters:
+            if hasattr(exporter, "shutdown"):
+                exporter.shutdown()
+
+    def cleanup(self):
+        """Cleanup the validator state for a fresh test run."""
+        self._spans = []
+        if self.memory_exporter is not None:
+            self.memory_exporter.clear()
+        if self.file_exporter is not None:
+            self.file_exporter.force_flush()
+        self.trace_id = None
 
     @property
     def spans(self):
@@ -57,23 +95,57 @@ class MonocleValidator:
             self._spans = self.memory_exporter.get_finished_spans()
         return self._spans
 
+    def flush_to_exporters(self, test_name:str, test_failed:bool):
+        """Flush the current spans and prepare for validation."""
+        if self.export_failed_tests_only and not test_failed:
+            return
+        span:Span = None
+        for exporter in self.exporters:
+            for span in self.memory_exporter.get_finished_spans():
+                if test_failed:
+                    span._attributes["test.status"] = "failed"
+                else:
+                    span._attributes["test.status"] = "passed"
+                exporter.export([span])
+            if hasattr(exporter, "force_flush"):
+                exporter.force_flush()
+
+    def pre_test_run_setup(self, test_case_name:str, mock_tools: Optional[list[MockTool]] = None) -> None:
+        """
+        Prepares the validator for a new test run by clearing existing spans.
+        """
+        context:Context = None
+        if mock_tools is not None:
+            context = self._set_wrapper_methods(mock_tools)
+        test_scope = {TEST_SCOPE_NAME: test_case_name}
+        git_scopes = get_git_context()
+        all_scopes = {**test_scope, **git_scopes}
+        token = start_scopes(all_scopes, context)
+        return token
+
+    def post_test_cleanup(self, token:object, test_name:str, test_failed:bool):
+        try:
+            self.flush_to_exporters(test_name, test_failed)
+        finally:
+            self.cleanup()
+            if token is not None:
+                stop_scope(token)
+
     @contextmanager
-    def monocle_exporter_wrapper(self, test_case: TestCase, request):
+    def monocle_exporter_wrapper(self, test_case: TestCase, request:pytest.FixtureRequest):
         test_case_name = request.node.name if request is not None else (test_case.test_case_name if test_case is not None else "monocle_test")
-        self.file_exporter.set_service_name(test_case_name)
-        token = self._set_wrapper_methods(test_case.mock_tools)
+        token = self.pre_test_run_setup(test_case_name, test_case.mock_tools)
+        prior_test_failed_count = request.session.testsfailed
         try:
             yield
         finally:
             try:
                 self.validate(test_case)
             finally:
-                self.memory_exporter.clear()
-                self.file_exporter.force_flush()
-                self.file_exporter.shutdown()
+                self.post_test_cleanup(token, request.node.name, request.session.testsfailed > prior_test_failed_count)
                 self._spans = []
                 if token is not None:
-                    detach(token)
+                    stop_scope(token)
 
     @staticmethod
     def test_id_generator(val):
@@ -90,24 +162,26 @@ class MonocleValidator:
         def decorator(func):
             if inspect.iscoroutinefunction(func):
                 @pytest.mark.asyncio
-                @pytest.mark.parametrize("test_case", test_cases, ids = MonocleValidator.test_id_generator)
+                @pytest.mark.parametrize("test_case", test_cases)
                 async def wrapper(test_case, request, *args, **kwargs):
                     with self.monocle_exporter_wrapper(test_case, request):
                         return await func(test_case, *args, **kwargs)
             else:
-                @pytest.mark.parametrize("test_case", test_cases, ids = MonocleValidator.test_id_generator)
+                @pytest.mark.parametrize("test_case", test_cases)
                 def wrapper(test_case, request, *args, **kwargs):
                     with self.monocle_exporter_wrapper(test_case, request):
                         return func(test_case, *args, **kwargs)
             return wrapper
         return decorator
 
-    async def test_workflow_async(self, workflow_func, test_case:TestCase):
+    async def test_workflow_async(self, workflow_func, test_case:Union[TestCase, dict]):
         """Run the workflow function with the test case input and validate the output.
         Args:
             workflow_func (callable): The workflow function to test.
             test_case (TestCase): The test case containing input and expected output.
         """
+        if isinstance(test_case, dict):
+            test_case = TestCase.model_validate(test_case)
         result = None
         try:
             result = await workflow_func(*test_case.test_input)
@@ -117,12 +191,14 @@ class MonocleValidator:
         self.validate_result(test_case, result)
         return result
 
-    def test_workflow(self, workflow_func, test_case:TestCase):
+    def test_workflow(self, workflow_func, test_case:Union[TestCase, dict]):
         """Run the workflow function with the test case input and validate the output.
         Args:
             workflow_func (callable): The workflow function to test.
             test_case (TestCase): The test case containing input and expected output.
         """
+        if isinstance(test_case, dict):
+            test_case = TestCase.model_validate(test_case)
         result = None
         try:
             result = workflow_func(*test_case.test_input)
@@ -132,26 +208,40 @@ class MonocleValidator:
         self.validate_result(test_case, result)
         return result
 
-    async def test_agent_async(self, agent, agent_type:str, test_case:TestCase):
+    @staticmethod
+    def run_agent(agent, agent_type:str, *args, **kwargs):
         agent_runner = get_agent_runner(agent_type)
         if agent_runner is None:
             raise ValueError(f"Unsupported agent type: {agent_type}")
+        result = agent_runner.run_agent(agent, *args, **kwargs)
+        return result
+
+    @staticmethod
+    async def run_agent_async(agent, agent_type:str, *args, **kwargs):
+        agent_runner = get_agent_runner(agent_type)
+        if agent_runner is None:
+            raise ValueError(f"Unsupported agent type: {agent_type}")
+        result = await agent_runner.run_agent_async(agent, *args, **kwargs)
+        return result
+
+    async def test_agent_async(self, agent, agent_type:str, test_case:Union[TestCase, dict]):
+        if isinstance(test_case, dict):
+            test_case = TestCase.model_validate(test_case)
         result = None
         try:
-            result = await agent_runner.run_agent_async(agent, *test_case.test_input)
+            result = await MonocleValidator.run_agent_async(agent, agent_type, *test_case.test_input)
         except Exception as e:
             if not test_case.expect_errors:
                 raise
         self.validate_result(test_case, result)
         return result
 
-    def test_agent(self, agent, agent_type:str, test_case:TestCase):
-        agent_runner = get_agent_runner(agent_type)
-        if agent_runner is None:
-            raise ValueError(f"Unsupported agent type: {agent_type}")
+    def test_agent(self, agent, agent_type:str, test_case:Union[TestCase, dict]):
+        if isinstance(test_case, dict):
+            test_case = TestCase.model_validate(test_case)
         result = None
         try:
-            result = agent_runner.run_agent(agent, *test_case.test_input)
+            result = MonocleValidator.run_agent(agent, agent_type, *test_case.test_input)
         except Exception as e:
             if not test_case.expect_errors:
                 raise
@@ -160,7 +250,7 @@ class MonocleValidator:
 
     def _set_wrapper_methods(self, mock_tools: list[MockTool]) -> list[dict]:
         skip_exec: dict[str, dict] = {}
-        token = None
+        context = None
         for mock_tool in mock_tools:
             skip_exec[mock_tool.name] = {
                 "entity.type": mock_tool.type,
@@ -170,8 +260,8 @@ class MonocleValidator:
                 "error_message": mock_tool.error_message
             }
         if len(skip_exec) > 0:
-            token = attach(set_value(MONOCLE_SKIP_EXECUTIONS, skip_exec))
-        return token
+            context = set_value(MONOCLE_SKIP_EXECUTIONS, skip_exec)
+        return context
 
     def validate(self, test_case:TestCase) -> bool:
         """Validate the test case against the collected spans.
@@ -295,7 +385,7 @@ class MonocleValidator:
             self._evaluate_span(verified_response_span, eval, positive_test)
 
         if max_output_tokens is not None:
-            self.check_token_limits(max_output_tokens, positive_test)
+            self.check_completion_token_limits(max_output_tokens, positive_test)
         return True
 
     def _valid_response(self, response_to_evaluate:str, actual_response:str, comparer:BaseComparer) -> bool:
@@ -314,8 +404,8 @@ class MonocleValidator:
          """
         tool_name:str = test_span.entities[0].name
         agent_name:str = test_span.entities[1].name if len(test_span.entities) > 1 else None
-        tool_input:str = test_span.input
-        tool_output:str = test_span.output
+        tool_inputs:list[str] = [test_span.input] if test_span.input is not None else []
+        tool_outputs:list[str] = [test_span.output] if test_span.output is not None else []
         positive_test:bool = test_span.positive_test
         expect_error:bool = test_span.expect_errors
         expect_warnings:bool = test_span.expect_warnings
@@ -332,7 +422,8 @@ class MonocleValidator:
             assert False, f"Tool '{tool_name}' was invoked by agent '{agent_name}', but was not expected to be."
 
         self._check_error_warnings(tool_invocation_spans, tool_name, agent_name, expect_error, expect_warnings)
-        self._check_input_output(tool_invocation_spans, tool_name, agent_name, tool_input, tool_output, comparer, eval, positive_test)
+        self._check_input_output(tool_invocation_spans, tool_inputs, tool_outputs, comparer, eval, positive_test,
+                                    tool_name=tool_name, agent_name=agent_name)
 
         return True
 
@@ -347,8 +438,8 @@ class MonocleValidator:
         expect_warnings:bool = test_span.expect_warnings
         eval:Evaluation = test_span.eval
         comparer:BaseComparer = test_span.comparer
-        agent_input:str = test_span.input
-        agent_output:str = test_span.output
+        agent_inputs:list[str] = [test_span.input] if test_span.input is not None else []
+        agent_outputs:list[str] = [test_span.output] if test_span.output is not None else []
 
         agent_invocation_spans = self._get_agent_invocation_spans(agent_name)
         if len(agent_invocation_spans) == 0:
@@ -358,7 +449,7 @@ class MonocleValidator:
         if not positive_test:
             assert False, f"Agent '{agent_name}' was invoked, but was not expected to be."
         self._check_error_warnings(agent_invocation_spans, None,agent_name, expect_error, expect_warnings)
-        self._check_input_output(agent_invocation_spans, None, agent_name, agent_input, agent_output, comparer, eval, positive_test)
+        self._check_input_output(agent_invocation_spans, agent_inputs, agent_outputs, comparer, eval, positive_test, agent_name=agent_name)
         return True
 
     def verify_agent_delegated(self, from_agent:str, to_agent:str, positive_test:bool, expect_error:bool ,
@@ -389,14 +480,29 @@ class MonocleValidator:
             assert False, f"Agent '{to_agent}' was not delegated by '{from_agent}'."
         return True
 
-    def check_token_limits(self, max_output_tokens:int, positive_test:bool = True) -> bool:
+    def check_completion_token_limits(self, max_output_tokens:int, positive_test:bool = True) -> bool:
         """Verify that the output token limits are respected in the spans.
          Args:
             max_tokens (int): The maximum number of tokens allowed in the output.
          """
         if max_output_tokens is None:
             return True
-        tokens = 0
+        return self._check_token_limits(max_output_tokens, "completion_tokens", positive_test)
+
+    def check_total_token_limits(self, max_total_tokens:int, positive_test:bool = True) -> bool:
+        """Verify that the output token limits are respected in the spans.
+         Args:
+            max_tokens (int): The maximum number of tokens allowed in the output.
+         """
+        if max_total_tokens is None:
+            return True
+        return self._check_token_limits(max_total_tokens, "total_tokens", positive_test)
+
+    def _check_token_limits(self, max_tokens:int, token_name:str, positive_test:bool) -> bool:
+        """Verify that the output token limits are respected in the spans.
+         Args:
+            max_tokens (int): The maximum number of tokens allowed in the output.
+         """
         for span in self.spans:
             span_attributes = span.attributes
             if (
@@ -405,12 +511,12 @@ class MonocleValidator:
             ):
                 for event in span.events:
                     if event.name == "metadata":
-                        tokens += event.attributes.get("completion_tokens", 0)
+                        tokens += event.attributes.get(token_name, 0)
 
         if positive_test:
-            assert tokens <= max_output_tokens, f" Output token limit exceeded: {tokens} > {max_output_tokens}"
+            assert tokens <= max_tokens, f" {token_name} limit exceeded: {tokens} > {max_tokens}"
         else:
-            assert tokens > max_output_tokens, f" Output token limit was not exceeded as expected: {tokens} <= {max_output_tokens}"
+            assert tokens > max_tokens, f" {token_name} limit was not exceeded as expected: {tokens} <= {max_tokens}"
         return True
 
     def _verify_tool_errors(self, tool_name:str, agent_name:str, expect_error:bool, found_error: bool, expect_warnings:bool, found_warning: bool) -> None:
@@ -423,29 +529,29 @@ class MonocleValidator:
             elif not expect_warnings and found_warning:
                 assert False, f"Tool '{tool_name}' was invoked by agent '{agent_name}' but warning found."
 
-    def _verify_tool_input_output(self, tool_name: str, agent_name: str, tool_input: Optional[str], found_input: bool,
-                    tool_output: Optional[str], found_output: bool, positive_test: bool) -> None:
-        if tool_input is not None and found_input is False and positive_test:
-            assert False, f"Tool '{tool_name}' was never invoked by agent {agent_name} with input '{tool_input}'."
-        elif tool_input is not None and found_input is True and not positive_test:
-            assert False, f"Tool '{tool_name}' was invoked by agent {agent_name} with input '{tool_input}', but was not expected to be."
+    def _verify_tool_input_output(self, tool_name: str, agent_name: str, tool_inputs: Optional[list[str]], found_input: bool,
+                    tool_outputs: Optional[list[str]], found_output: bool, positive_test: bool) -> None:
+        if len(tool_inputs) > 0 and found_input is False and positive_test:
+            assert False, f"Tool '{tool_name}' was never invoked by agent {agent_name} with input '{tool_inputs}'."
+        elif len(tool_inputs) > 0 and found_input is True and not positive_test:
+            assert False, f"Tool '{tool_name}' was invoked by agent {agent_name} with input '{tool_inputs}', but was not expected to be."
 
-        if tool_output is not None and found_output is False and positive_test:
-            assert False, f"Tool '{tool_name}' invoked by agent {agent_name} didn't return '{tool_output}'."
-        elif tool_output is not None and found_output is True and not positive_test:
-            assert False, f"Tool '{tool_name}' invoked by agent {agent_name} returned '{tool_output}', but was not expected to be."
+        if len(tool_outputs) > 0 and found_output is False and positive_test:
+            assert False, f"Tool '{tool_name}' invoked by agent {agent_name} didn't return '{tool_outputs}'."
+        elif len(tool_outputs) > 0 and found_output is True and not positive_test:
+            assert False, f"Tool '{tool_name}' invoked by agent {agent_name} returned '{tool_outputs}', but was not expected to be."
 
-    def _verify_agent_input_output(self, agent_name: str, agent_input: Optional[str], found_input: bool,
-                    agent_output: Optional[str], found_output: bool, positive_test: bool) -> None:
-        if agent_input is not None and found_input is False and positive_test:
-            assert False, f"Agent '{agent_name}' was never invoked with input '{agent_input}'."
-        elif agent_input is not None and found_input is True and not positive_test:
-            assert False, f"Agent '{agent_name}' was invoked with input '{agent_input}', but was not expected to be."
+    def _verify_agent_input_output(self, agent_name: str, agent_inputs: Optional[list[str]], found_input: bool,
+                    agent_outputs: Optional[list[str]], found_output: bool, positive_test: bool) -> None:
+        if len(agent_inputs) > 0 and found_input is False and positive_test:
+            assert False, f"Agent '{agent_name}' was never invoked with input '{agent_inputs}'."
+        elif len(agent_inputs) > 0 and found_input is True and not positive_test:
+            assert False, f"Agent '{agent_name}' was invoked with input '{agent_inputs}', but was not expected to be."
 
-        if agent_output is not None and found_output is False and positive_test:
-            assert False, f"Agent '{agent_name}' didn't return '{agent_output}'."
-        elif agent_output is not None and found_output is True and not positive_test:
-            assert False, f"Agent '{agent_name}' returned '{agent_output}', but was not expected to be."
+        if len(agent_outputs) > 0 and found_output is False and positive_test:
+            assert False, f"Agent '{agent_name}' didn't return '{agent_outputs}'."
+        elif len(agent_outputs) > 0 and found_output is True and not positive_test:
+            assert False, f"Agent '{agent_name}' returned '{agent_outputs}', but was not expected to be."
 
     def _check_error_warnings(self, spans:list[Span], tool_name:Optional[str], agent_name:str, expect_error:bool, expect_warnings:bool) -> None:
             found_error = False
@@ -470,41 +576,45 @@ class MonocleValidator:
             elif not expect_warnings and found_warning:
                 assert False, f"Agent '{agent_name}' was invoked but warning found."
 
-    def _check_input_output(self, spans:list[Span], tool_name:str, agent_name:str, expected_input:Optional[str],
-                expected_output:Optional[str], comparer:BaseComparer, eval:Evaluation, positive_test:bool) -> None:
+    def _check_input_output(self, spans:list[Span], expected_inputs:Optional[list[str]], expected_outputs:Optional[list[str]],
+                        comparer:BaseComparer, eval:Optional[Evaluation], positive_test:Optional[bool]=True,
+                        tool_name:Optional[str]=None, agent_name:Optional[str]=None) -> None:
+        candidate_spans = []
         found_input = found_output = False
-        if expected_input is not None or expected_output is not None:
+        if len(expected_inputs) > 0 or len(expected_outputs) > 0:
             candidate_span = None
             for span in spans:
                 found_input_in_span = False
                 found_output_in_span = False
                 for event in span.events:
                     if event.name == "data.input":
-                        if expected_input is not None:
-                            if comparer.compare(event.attributes.get("input"), expected_input):
+                        for expected_input in expected_inputs:
+                            if comparer.compare(expected_input, event.attributes.get("input")):
                                 found_input_in_span = True
+                                break
                     elif event.name == "data.output":
-                        if expected_output is not None:
-                            if comparer.compare(event.attributes.get("response"), expected_output):
+                        for expected_output in expected_outputs:
+                            if comparer.compare(expected_output, event.attributes.get("response")):
                                 found_output_in_span = True
+                                break
                 if found_input_in_span and found_output_in_span:
                     found_input = found_output = True
                     candidate_span = span
-                    break
-                elif found_input_in_span and expected_output is None:
+                elif found_input_in_span and len(expected_outputs) == 0:
                     found_input = True
                     candidate_span = span
-                    break
-                elif found_output_in_span and expected_input is None:
+                elif found_output_in_span and len(expected_inputs) == 0:
                     found_output = True
                     candidate_span = span
-                    break
-            if eval is not None and candidate_span is not None:
-                self._evaluate_span(candidate_span, eval, positive_test)
+                if candidate_span is not None:
+                    if eval is not None:
+                        self._evaluate_span(candidate_span, eval, positive_test)
+                    candidate_spans.append(candidate_span)
             if tool_name is not None:
-                self._verify_tool_input_output(tool_name, agent_name, expected_input, found_input, expected_output, found_output, positive_test)
-            else:
-                self._verify_agent_input_output(agent_name, expected_input, found_input, expected_output, found_output, positive_test)
+                self._verify_tool_input_output(tool_name, agent_name, expected_inputs, found_input, expected_outputs, found_output, positive_test)
+            elif agent_name is not None:
+                self._verify_agent_input_output(agent_name, expected_inputs, found_input, expected_outputs, found_output, positive_test)
+        return candidate_spans
 
     def _get_inference_spans(self) -> list[Span]:
         inferences: list[Span] = []
@@ -534,7 +644,7 @@ class MonocleValidator:
             span_attributes = span.attributes
             if (
                 "span.type" in span_attributes
-                and span_attributes["span.type"] == "agentic.request"
+                and span_attributes["span.type"] == "agentic.turn"
             ):
                 found_error = self._span_has_error(span)
                 if expect_error and not found_error:
