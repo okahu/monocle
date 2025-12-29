@@ -59,6 +59,7 @@ jobs:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.EXPORTER_GITHUB_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
