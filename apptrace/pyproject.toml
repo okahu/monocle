@@ -138,25 +138,25 @@ dev = [
 ]
 
 dev_tranformers = [
-  'sentence-transformers==5.2.0.',
+  'sentence-transformers==5.2.0'
 ]
 
 dev_gemini = [
-  'llama-index-llms-gemini==0.6.0',
+  'llama-index-llms-gemini==0.6.0'
 ]
 
 dev_strands = [
   'strands-agents==1.11.0',
-  'strands-agents-tools==0.2.10',
+  'strands-agents-tools==0.2.10'
 ]
 
 azure = [
   'azure-storage-blob==12.22.0',
-  'azure-ai-inference',
+  'azure-ai-inference'
 ]
 
 aws = [
-  'boto3==1.37.24',
+  'boto3==1.37.24'
 ]
 
 [project.urls]
