@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module")
 def setup():
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", ".[dev_tranformers]"])
+        # subprocess.check_call([sys.executable, "-m", "pip", "install", ".[dev_tranformers]"])
         custom_exporter = CustomConsoleSpanExporter()
         instrumentor = setup_monocle_telemetry(
             workflow_name="haystack_app_1",
