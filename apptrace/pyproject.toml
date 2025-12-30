@@ -71,8 +71,8 @@ testpaths = [
 
 [project.optional-dependencies]
 ai_test = [
-   'bert-score',
-   'transformers'
+  'bert-score',
+  'transformers'
 ]
 
 dev = [
@@ -138,7 +138,7 @@ dev = [
 ]
 
 dev_tranformers = [
-    'sentence-transformers==5.2.0.'
+  'sentence-transformers==5.2.0.'
 ]
 
 dev_gemini = [
@@ -151,12 +151,12 @@ dev_strands = [
 ]
 
 azure = [
-    'azure-storage-blob==12.22.0',
-    'azure-ai-inference'
+  'azure-storage-blob==12.22.0',
+  'azure-ai-inference'
 ]
 
 aws = [
-    'boto3==1.37.24',
+  'boto3==1.37.24'
 ]
 
 [project.urls]
