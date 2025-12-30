@@ -100,6 +100,10 @@ jobs:
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
+          pip install -e '.[dev_tranformers]'
+          pip install -e '.[dev_gemini]'
+          pip install -e '.[dev_strands]'
+          pip install https://okahu.jfrog.io/artifactory/okahu-patch-pypi/monocle-apptrace/0.7.0b3/monocle_apptrace-0.7.0b3-py3-none-any.whl
 
       - name: Run Unit tests
         id: run-unit-tests
@@ -279,4 +283,3 @@ jobs:
           from: ${{ secrets.EMAIL_FROM }}
           body: file://email_body.txt
           attachments: test_summary.txt,failed_files.txt
-
