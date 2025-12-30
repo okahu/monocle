@@ -133,7 +133,7 @@ dev = [
   'huggingface_hub==0.35.3',
   'litellm==1.77.5',
   'google-ai-haystack',
-  'crewai==0.95.0'
+  'crewai==0.95.0',
   'fastmcp==2.14.1'
 ]
 
