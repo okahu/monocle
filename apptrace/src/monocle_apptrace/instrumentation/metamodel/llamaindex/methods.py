@@ -83,7 +83,7 @@ LLAMAINDEX_METHODS = [
         "object": "AgentWorkflow",
         "method": "run",
         "span_handler": "llamaindex_agent_handler",
-        "wrapper_method": task_wrapper,
+        "wrapper_method": atask_wrapper,
         "output_processor": AGENT_REQUEST
     },
     {
@@ -91,6 +91,7 @@ LLAMAINDEX_METHODS = [
         "object": "ReActAgent",
         "method": "run",
         "wrapper_method": task_wrapper,
+        "span_handler": "llamaindex_agent_handler",
         "output_processor": AGENT
     },
     {
@@ -98,6 +99,7 @@ LLAMAINDEX_METHODS = [
         "object": "FunctionAgent",
         "method": "finalize",
         "wrapper_method": atask_wrapper,
+        "span_handler": "llamaindex_agent_handler",
         "output_processor": AGENT
     },
     {

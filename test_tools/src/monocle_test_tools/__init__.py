@@ -17,13 +17,16 @@ from .schema import (
     SpanType,
     Evaluation,
     MockTool,
-    ToolType
+    ToolType,
 )
 
 from .evals import ( BaseEval, BertScorerEval)
 from .comparer import ( BaseComparer, BertScoreComparer, DefaultComparer)
 from . import trace_utils
 from .runner import AgentRunner, get_agent_runner
+from .fluent_api import TraceAssertion
+from . import pytest_plugin
+from . import gitutils
 
 __all__ = [
     "MonocleValidator",
@@ -39,5 +42,10 @@ __all__ = [
     "BertScoreComparer",
     "DefaultComparer",
     "AgentRunner",
-    "get_agent_runner"
+    "get_agent_runner",
+    "MockTool",
+    "ToolType",
+    "TraceAssertion",
+    "pytest_plugin",
+    "gitutils"
 ]
