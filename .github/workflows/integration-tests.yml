@@ -99,11 +99,12 @@ jobs:
           pip install --upgrade pip
           cd apptrace
           pip install -e '.[dev]'
+          pip install google-adk
+          pip install crewai
+          pip install fastmcp
           pip install -e '.[azure]'
           pip install -e '.[aws]'
-          pip install https://okahu.jfrog.io/artifactory/okahu-patch-pypi/monocle-apptrace/0.7.0b4/monocle_apptrace-0.7.0b4-py3-none-any.whl
           
-
       - name: Run Unit tests
         id: run-unit-tests
         run: |

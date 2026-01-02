@@ -10,7 +10,7 @@ commands = [
 
 [project]
 name = "monocle_apptrace"
-version = "0.6.6"
+version = "0.7.0"
 authors = [
   { name="Okahu Inc.", email="okahu-pypi@okahu.ai" },
 ]
@@ -30,7 +30,7 @@ dependencies = [
    'opentelemetry-api',
    'opentelemetry-sdk',
    'opentelemetry-instrumentation',
-   'opentelemetry-exporter-otlp-proto-http',
+   'opentelemetry-exporter-otlp-proto-http'
 ]
 
 [tool.pytest.ini_options]
@@ -126,15 +126,16 @@ dev = [
   'click==8.2.1',
   'python-dotenv>=1.1.0',
   'langchain-google-genai==2.0.10',
-  'google-adk==1.10.0',
+  # Temporarily remove google-adk due to complex dependencies
+  # 'google-adk==1.10.0',
   'google-generativeai==0.8.5',
   'openai-agents==0.2.6',
   'mistralai==1.9.9',
   'huggingface_hub==0.35.3',
   'litellm==1.77.5',
   'google-ai-haystack',
-  'crewai==0.95.0',
-  'fastmcp==2.14.1'
+  #'crewai==0.95.0',
+  #'fastmcp==2.14.1'
 ]
 
 dev_tranformers = [
