@@ -10,7 +10,7 @@ commands = [
 
 [project]
 name = "monocle_apptrace"
-version = "0.7.0"
+version = "0.7.1"
 authors = [
   { name="Okahu Inc.", email="okahu-pypi@okahu.ai" },
 ]
@@ -135,7 +135,7 @@ dev = [
   'litellm==1.77.5',
   'google-ai-haystack',
   #'crewai==0.95.0',
-  #'fastmcp==2.14.1'
+  fastmcp==2.14.1'
 ]
 
 dev_tranformers = [

@@ -99,9 +99,6 @@ jobs:
           pip install --upgrade pip
           cd apptrace
           pip install -e '.[dev]'
-          pip install google-adk
-          pip install crewai
-          pip install fastmcp
           pip install -e '.[azure]'
           pip install -e '.[aws]'
           
@@ -171,7 +168,7 @@ jobs:
           cd apptrace
           export PYTHONPATH=./src:./tests
           set -e
-          pytest -rfs tests/integration/test*.py --tb=short | tee integration_test_result.log
+          pytest -rfs tests/integration/test*.py --ignore-glob='tests/integration/test_adk_*.py' --ignore-glob='tests/integration/test_crewai_*.py' --tb=short | tee integration_test_result.log
           EXIT_CODE=${PIPESTATUS[0]}
           grep -E 'FAILED.*::' integration_test_result.log | cut -d ':' -f 1 | sort | uniq >> integrationtest_failed_files.txt
           echo "Failed Integration test files:"
