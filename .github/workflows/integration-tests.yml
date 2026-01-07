@@ -9,6 +9,11 @@ on:
       - "main"
   workflow_dispatch:
 
+# Define concurrency group based on workflow name
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false # Set to true if you want to cancel running workflows instead of queuing
+
 jobs:
   Unit-Integration-Test:
     runs-on: ubuntu-latest
