@@ -103,9 +103,9 @@ jobs:
       - name: Install package and dev dependencies
         run: |
           pip install --upgrade pip
-          pip install monocle-apptrace==0.7.1
-          pip install monocle-mcp==0.7.1
-          pip install monocle-test-tools==0.7.1
+          pip install --no-cache-dir monocle-apptrace==0.7.1
+          pip install --no-cache-dir monocle-mcp==0.7.1
+          pip install --no-cache-dir monocle-test-tools==0.7.1
           cd apptrace
           pip install -e '.[dev]'
           pip install -e '.[azure]'
