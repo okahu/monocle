@@ -98,15 +98,22 @@ jobs:
       - name: Build wheels
         run: |
           chmod +x ./.github/scripts/build-all.sh
-          ./.github/scripts/build-all.sh
+        #  ./.github/scripts/build-all.sh
 
       - name: Install package and dev dependencies
         run: |
           pip install --upgrade pip
+          pip install monocle-apptrace
+          pip install monocle-mcp
+          pip install monocle-test-tools
           cd apptrace
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
+
+          pip show monocle-apptrace
+          pip show monocle-mcp
+          pip show monocle-test-tools
 
       - name: Run Unit tests
         id: run-unit-tests
