@@ -1,6 +1,7 @@
 import ast
 import logging, json
 import os
+import threading
 import traceback
 from typing import Callable, Generic, Optional, TypeVar, Mapping, Union
 
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 embedding_model_context = {}
 scope_id_generator = id_generator.RandomIdGenerator()
 http_scopes:dict[str:str] = {}
+monocle_workflow_name: str = None
 
 try:
     monocle_sdk_version = version("monocle_apptrace")
@@ -617,3 +619,27 @@ def setup_readablespan_patch():
     if _original_to_json is None:
         _original_to_json = ReadableSpan.to_json
         ReadableSpan.to_json = _patched_to_json
+
+class CyclicCounter:
+    def __init__(self, max_value: int):
+        self.max_value = max_value
+        self._counter = max_value -1
+        self._lock = threading.Lock()
+    
+    def increment(self):
+        with self._lock:
+            self._counter = (self._counter + 1) % self.max_value
+            return self._counter
+    
+    def reset(self):
+        with self._lock:
+            self._counter = self.max_value -1
+                
+def set_workflow_name(workflow_name: str) -> None:
+    """Set the global workflow name."""
+    global monocle_workflow_name
+    monocle_workflow_name = workflow_name
+
+def get_workflow_name() -> str:
+    """Get the global workflow name."""
+    return monocle_workflow_name
