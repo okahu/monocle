@@ -107,6 +107,7 @@ jobs:
         run: |
           pip install --upgrade pip
           cd apptrace
+          pip install bedrock-agentcore==1.2.0
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
