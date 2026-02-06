@@ -6,8 +6,8 @@ from common.custom_exporter import CustomConsoleSpanExporter
 from common.langhchain_patch import create_history_aware_retriever
 from dotenv import load_dotenv
 from langsmith import Client
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains.retrieval import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.output_parsers import StrOutputParser
