@@ -136,6 +136,8 @@ dev = [
   'openai-agents',
   'azure-identity',
   'agent-framework-azure-ai',
+  'bedrock-agentcore==1.2.0',
+    'google-cloud-storage==3.8.0'
 ]
 
 dev_tranformers = [
@@ -162,6 +164,10 @@ aws = [
 
 opentelemetry-exporter = [
   'opentelemetry-exporter-otlp-proto-http'
+]
+
+gcp = [
+    'google-cloud-storage==3.8.0',
 ]
 
 
