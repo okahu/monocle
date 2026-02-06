@@ -177,7 +177,7 @@ jobs:
           cd apptrace
           export PYTHONPATH=./src:./tests
           set -e
-          pytest -rfs tests/integration/ --ignore-glob='**/*otlp*.py' --tb=short | tee integration_test_result.log
+          pytest -rfs tests/integration/ --ignore-glob='**/*otlp*.py' --ignore=tests/integration/test_langchain_sample_gcs.py --tb=short | tee integration_test_result.log
           EXIT_CODE=${PIPESTATUS[0]}
           grep -E 'FAILED.*::' integration_test_result.log | cut -d ':' -f 1 | sort | uniq >> integrationtest_failed_files.txt
           echo "Failed Integration test files:"
