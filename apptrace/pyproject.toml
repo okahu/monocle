@@ -166,7 +166,7 @@ opentelemetry-exporter = [
 ]
 
 gcp = [
-    'google-cloud-storage==3.8.0',
+    'google-cloud-storage==2.18.0',
 ]
 
 
