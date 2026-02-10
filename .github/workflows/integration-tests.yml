@@ -114,8 +114,7 @@ jobs:
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
-          pip install google-cloud-storage==2.18.0
-
+          pip install -e '.[gcp]'
       - name: Run Unit tests
         id: run-unit-tests
         run: |
