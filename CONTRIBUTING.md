@@ -25,4 +25,29 @@ If you are a reviewer/approver of Monocle, you can
 
 If you want to become a contributor of Monocle, submit your pull requests. All contributions to this project must be accompanied by acknowledgment of, and agreement to, the [Developer Certificate of Origin](https://github.com/apps/dco). All submissions will be reviewed as quickly as possible.
 
+## Pull Request Process
+### CI/CD Workflow Approval
+For security reasons, GitHub requires manual approval for workflows on pull requests from forked repositories:
+- After submitting your PR, automated tests may show "action_required" status
+- A maintainer with write access will review and approve the workflow to run
+- This is a standard security measure to prevent malicious code execution
+- Once approved, all unit and integration tests will run automatically
+
+### PR Status Checks
+Before your PR can be merged, it must:
+- Pass all unit tests in `apptrace/tests/unit/`
+- Pass all integration tests in `apptrace/tests/integration/`
+- Be marked as "Ready for review" (not in draft status)
+- Receive approval from at least one maintainer
+- Have all review comments addressed
+
+### Testing Your Changes
+To run tests locally before submitting:
+```bash
+cd apptrace
+pip install -e '.[dev]'
+export PYTHONPATH=./src:./tests
+pytest tests/unit/
+```
+
  
