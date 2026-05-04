@@ -66,7 +66,11 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GITHUB_TOKEN: ${{ secrets.EXPORTER_GITHUB_TOKEN }}
       GOOGLE_GENAI_USE_VERTEXAI: True
-
+  
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
