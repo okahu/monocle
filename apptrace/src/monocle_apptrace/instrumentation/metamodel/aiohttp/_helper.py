@@ -1,7 +1,8 @@
 import logging
 from threading import local
+import json
 from monocle_apptrace.instrumentation.common.utils import extract_http_headers, clear_http_scopes, get_exception_status_code, try_option, Option, MonocleSpanException
-from monocle_apptrace.instrumentation.common.span_handler import SpanHandler
+from monocle_apptrace.instrumentation.common.span_handler import SpanHandler, HttpSpanHandler
 from monocle_apptrace.instrumentation.common.constants import HTTP_SUCCESS_CODES
 from urllib.parse import unquote
 
@@ -18,6 +19,15 @@ def get_method(args) -> str:
     return http_method.unwrap_or("")
 
 def get_params(args) -> dict:
+    if len(args) > 0 and hasattr(args[0], "content") and hasattr(args[0].content, "_buffer"):
+        data = args[0].content._buffer
+        if len(data) > 0:
+            message = json.loads(data[0].decode('utf-8'))
+            # Return the input query/text for params
+            query = message.get('text', '')
+            if query:
+                return query
+            return message.get('question','')
     params: Option[str] = try_option(getattr, args[0], 'query_string')
     return unquote(params.unwrap_or(""))
 
@@ -64,7 +74,7 @@ def get_route(args) -> str:
 def get_function_name(args) -> str:
     return args[0].match_info.handler.__name__
 
-class aiohttpSpanHandler(SpanHandler):
+class aiohttpSpanHandler(HttpSpanHandler):
 
     def pre_tracing(self, to_wrap, wrapped, instance, args, kwargs):
         return aiohttp_pre_tracing(args), None

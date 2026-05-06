@@ -1,6 +1,8 @@
 import ast
+import contextvars
 import logging, json
 import os
+import threading
 import traceback
 from typing import Callable, Generic, Optional, TypeVar, Mapping, Union
 
@@ -18,6 +20,15 @@ from importlib.metadata import version
 from opentelemetry.trace.span import INVALID_SPAN
 _MONOCLE_SPAN_KEY = "monocle" + _SPAN_KEY
 
+# Sentinel ContextVar used to detect when an async-generator's finally/cleanup
+# block runs in a different contextvars.Context than where attach() was called
+# (e.g. Python GC finalizer or event-loop asyncgen finalizer).  Each enter-site
+# sets a unique object() marker; cleanup code checks the marker before calling
+# detach() so that cross-context resets don't reach OTel's error logger.
+MONOCLE_CONTEXT_MARKER: contextvars.ContextVar = contextvars.ContextVar(
+    "_monocle_ctx_marker", default=None
+)
+
 T = TypeVar('T')
 U = TypeVar('U')
 
@@ -26,6 +37,7 @@ logger = logging.getLogger(__name__)
 embedding_model_context = {}
 scope_id_generator = id_generator.RandomIdGenerator()
 http_scopes:dict[str:str] = {}
+monocle_workflow_name: str = None
 
 try:
     monocle_sdk_version = version("monocle_apptrace")
@@ -195,6 +207,103 @@ def load_scopes() -> dict:
     except Exception as e:
         logger.debug(f"Error loading scope methods from file: {e}")
     return scope_methods
+
+
+def _normalize_exporters_list(monocle_exporters_list: Optional[str]):
+    if monocle_exporters_list is None:
+        return None
+    exporters = [item.strip().lower() for item in monocle_exporters_list.split(",") if item.strip()]
+    return tuple(sorted(exporters))
+
+
+def _normalize_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return bool(value)
+
+
+def build_setup_signature(
+        workflow_name: str,
+        span_processors: Optional[list] = None,
+        span_handlers: Optional[dict] = None,
+        wrapper_methods: Optional[list] = None,
+        union_with_default_methods: bool = True,
+        monocle_exporters_list: str = None,
+) -> dict:
+    return {
+        "workflow_name": workflow_name,
+        "span_processors": tuple(type(p).__name__ for p in (span_processors or [])),
+        "span_handlers": tuple(sorted((span_handlers or {}).keys())),
+        "wrapper_methods": tuple(
+            repr(m.to_dict() if hasattr(m, "to_dict") and callable(m.to_dict) else m)
+            for m in (wrapper_methods or [])
+        ),
+        "union_with_default_methods": _normalize_bool(union_with_default_methods),
+        "monocle_exporters_list": _normalize_exporters_list(monocle_exporters_list),
+    }
+
+def changed_setup_fields(previous: dict, current: dict) -> list[str]:
+    return [key for key, value in current.items() if previous.get(key) != value]
+
+
+def check_duplicate_setup(
+        workflow_name: str,
+        previous_signature: Optional[dict],
+        current_signature: dict,
+        instrumentor_exists: bool,
+) -> bool:
+    """
+    Check if setup_monocle_telemetry is being called as a duplicate.
+    
+    Logs warnings if duplicate setup is detected, with details about configuration
+    differences if parameters have changed.
+    
+    Args:
+        workflow_name: Name of the workflow being set up
+        previous_signature: Signature from the previous setup call, or None if first call
+        current_signature: Signature for the current setup call
+        instrumentor_exists: Whether an instrumentor instance already exists
+        
+    Returns:
+        True if this is a duplicate setup call, False if setup should proceed
+    """
+    if not instrumentor_exists:
+        return False
+    
+    logger.warning(
+        "Ignoring duplicate setup_monocle_telemetry() call for workflow '%s'; telemetry is already initialized. "
+        "Returning existing instrumentor without re-initializing.",
+        workflow_name,
+    )
+    
+    if previous_signature is not None:
+        changed_fields = changed_setup_fields(previous_signature, current_signature)
+        if changed_fields:
+            changed_values = {
+                field: {
+                    "previous": previous_signature.get(field),
+                    "current": current_signature.get(field),
+                }
+                for field in changed_fields
+            }
+            logger.warning(
+                "Duplicate setup call has configuration differences for workflow '%s'. "
+                "Changed keys: %s. Differences (previous vs current): %s",
+                workflow_name,
+                ", ".join(changed_fields),
+                changed_values,
+            )
+    
+    return True
+
 
 def __generate_scope_id() -> str:
     global scope_id_generator
@@ -439,13 +548,24 @@ def patch_instance_method(obj, method_name, func):
         obj: the instance to patch
         method_name: the name of the method (e.g., '__iter__')
         func: the new function, expecting (self, ...)
+
+    Returns:
+        True if the instance was patched in-place, False if the type
+        cannot be subclassed (e.g. native generator / async_generator).
     """
     cls = obj.__class__
-    # Dynamically create a new class that inherits from obj's class
-    new_cls = type(f"Patched{cls.__name__}", (cls,), {
-        method_name: func
-    })
-    obj.__class__ = new_cls
+    try:
+        # Dynamically create a new class that inherits from obj's class
+        new_cls = type(f"Patched{cls.__name__}", (cls,), {
+            method_name: func
+        })
+        obj.__class__ = new_cls
+        return True
+    except TypeError:
+        # Built-in C-level types such as `generator` and `async_generator`
+        # cannot be subclassed.  Callers should detect this and use a
+        # wrapper object approach instead.
+        return False
 
 
 def set_monocle_span_in_context(
@@ -533,7 +653,7 @@ def propogate_agent_name_to_parent_span(span: Span, parent_span: Span):
     if span.attributes.get("span.type") != AGENT_INVOCATION_SPAN_NAME:
         return
     if parent_span is not None:
-        parent_span.set_attribute(LAST_AGENT_INVOCATION_ID, hex(span.context.span_id))
+        parent_span.set_attribute(LAST_AGENT_INVOCATION_ID, format(span.context.span_id, '#018x'))
         agent_name = get_value(AGENT_NAME_KEY)
         if agent_name is not None:
             parent_span.set_attribute(LAST_AGENT_NAME, agent_name)
@@ -547,9 +667,9 @@ def propogate_inference_info_to_parent_span(span: Span, parent_span: Span):
         ## save last inference id in parent span
         if span.attributes.get("span.type") in [SPAN_TYPES.INFERENCE, SPAN_TYPES.INFERENCE_FRAMEWORK]:
             if span.attributes.get("span.subtype") in [INFERENCE_AGENT_DELEGATION, INFERENCE_TOOL_CALL]:
-                parent_span.set_attribute(LAST_INFERENCE, f"{hex(span.context.span_id)}:{span.attributes.get('entity.3.name', '')}")
+                parent_span.set_attribute(LAST_INFERENCE, f"{format(span.context.span_id, '#018x')}:{span.attributes.get('entity.3.name', '')}")
             elif span.attributes.get("span.subtype") == INFERENCE_TURN_END:
-                parent_span.set_attribute(LAST_INFERENCE, f"{hex(span.context.span_id)}:{ANY_AGENT}")
+                parent_span.set_attribute(LAST_INFERENCE, f"{format(span.context.span_id, '#018x')}:{ANY_AGENT}")
         # copy last infernce span id from parent span to tool span
         elif span.attributes.get("span.type") in [SPAN_TYPES.AGENTIC_TOOL_INVOCATION, SPAN_TYPES.AGENTIC_INVOCATION]:
             if LAST_INFERENCE in parent_span.attributes and verify_tool_names_in_spans(span, parent_span):
@@ -617,3 +737,31 @@ def setup_readablespan_patch():
     if _original_to_json is None:
         _original_to_json = ReadableSpan.to_json
         ReadableSpan.to_json = _patched_to_json
+
+class CyclicCounter:
+    def __init__(self, max_value: int):
+        self.max_value = max_value
+        self._counter = max_value -1
+        self._lock = threading.Lock()
+    
+    def increment(self):
+        with self._lock:
+            self._counter = (self._counter + 1) % self.max_value
+            return self._counter
+    
+    def reset(self):
+        with self._lock:
+            self._counter = self.max_value -1
+                
+def set_workflow_name(workflow_name: str) -> None:
+    """Set the global workflow name."""
+    global monocle_workflow_name
+    monocle_workflow_name = workflow_name
+
+def get_workflow_name() -> str:
+    """Get the global workflow name."""
+    return monocle_workflow_name
+
+def get_span_id(span: Span) -> str:
+    """Get the span ID as a hex string without 0x prefix."""
+    return format(span.context.span_id, '016x')

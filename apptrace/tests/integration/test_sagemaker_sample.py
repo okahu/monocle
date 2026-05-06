@@ -108,7 +108,7 @@ def build_context(similar_documents):
 
 
 def search_similar_documents_opensearch(query):
-    opensearch_url = os.environ['OPENSEARCH_ENDPOINT_URL_BOTO']
+    opensearch_url = os.environ['OPENSEARCH_ENDPOINT_URL_BOTO_SAGEMAKER']  # Your OpenSearch endpoint URL
     index_name = "embeddings"  # Your index name
     content_handler = ContentHandler()
     sagemaker_endpoint_embeddings = SagemakerEndpointEmbeddings(endpoint_name=os.environ['SAGEMAKER_EMB_ENDPOINT_NAME'],
@@ -133,7 +133,7 @@ def search_similar_documents_opensearch(query):
         connection_class=RequestsHttpConnection
     )
     retriever = doc_search.as_retriever()
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     logger.info(f"Retrieved docs: {docs}")
     return [doc.page_content for doc in docs]
 

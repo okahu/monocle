@@ -6,12 +6,12 @@ import jsonschema, json
 from typing import Optional, Union
 from opentelemetry.sdk.trace import Span, StatusCode
 from opentelemetry.sdk.trace.export import SpanProcessor, SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.export import SpanExporter
 from opentelemetry.context import set_value, Context, detach, attach
 import pytest
 #from sqlalchemy import func
 from monocle_apptrace.exporters.file_exporter import FileSpanExporter, DEFAULT_TRACE_FOLDER
+from monocle_apptrace.exporters.base_exporter import MonocleInMemorySpanExporter
 from monocle_apptrace import start_scopes, stop_scope
 from contextlib import contextmanager, asynccontextmanager
 import logging
@@ -20,7 +20,7 @@ from monocle_apptrace.instrumentation.common.instrumentor import MonocleInstrume
 from pydantic import BaseModel, ValidationError
 from monocle_test_tools.gitutils import get_git_context, get_repo_name
 from monocle_test_tools.schema import SpanType, TestSpan, TestCase, Evaluation, EvalInputs, MockTool
-from monocle_test_tools.constants import TEST_SCOPE_NAME, DEFAULT_WORKFLOW_NAME
+from monocle_test_tools.constants import TEST_SCOPE_NAME, DEFAULT_WORKFLOW_NAME, TEST_STATUS_ATTRIBUTE, TEST_ASSERTION_ATTRIBUTE
 from monocle_test_tools.comparer.base_comparer import BaseComparer
 from monocle_test_tools.runner.runner import get_agent_runner
 from monocle_test_tools import trace_utils
@@ -29,12 +29,12 @@ from monocle_apptrace.instrumentation.metamodel.adk.entities.tool import TOOL as
 from monocle_apptrace.instrumentation.metamodel.langgraph.methods import LANGGRAPH_METHODS
 from monocle_apptrace.instrumentation.metamodel.langgraph.entities.inference import TOOLS as LANGGRAPH_TOOL
 from monocle_apptrace.instrumentation.common.constants import MONOCLE_SKIP_EXECUTIONS, MONOCLE_WORKFLOW_NAME_KEY
-
+from monocle_apptrace.instrumentation.common.utils import set_workflow_name
 logger = logging.getLogger(__name__)
 
 class MonocleValidator:
     _spans:Span = []
-    memory_exporter:InMemorySpanExporter = None
+    memory_exporter:MonocleInMemorySpanExporter = None
     file_exporter:FileSpanExporter = None
     trace_id = None
     instrumentor: MonocleInstrumentor = None
@@ -60,7 +60,7 @@ class MonocleValidator:
         if exporter_list is None:
             exporter_list = os.getenv("MONOCLE_EXPORTER", "file")
         self.exporters = get_monocle_exporter(exporter_list)
-        self.memory_exporter = InMemorySpanExporter()
+        self.memory_exporter = MonocleInMemorySpanExporter()
         if export_failed_tests_only is None:
             export_failed_tests_only = os.getenv("MONOCLE_EXPORT_FAILED_TESTS_ONLY", "false").lower() == "true"
         if workflow_name is None:
@@ -74,7 +74,7 @@ class MonocleValidator:
         else:
             self.instrumentor = get_monocle_instrumentor()
             reset_span_processors([SimpleSpanProcessor(self.memory_exporter)])
-            self.workflow_token = attach(set_value(MONOCLE_WORKFLOW_NAME_KEY, workflow_name))
+            set_workflow_name(workflow_name)
         MonocleValidator._initialized = True
 
     def __del__(self):
@@ -99,7 +99,7 @@ class MonocleValidator:
             self._spans = self.memory_exporter.get_finished_spans()
         return self._spans
 
-    def flush_to_exporters(self, test_name:str, test_failed:bool):
+    def flush_to_exporters(self, test_name:str, test_failed:bool, test_assertion_message:str = None):
         """Flush the current spans and prepare for validation."""
         if self.export_failed_tests_only and not test_failed:
             return
@@ -107,9 +107,11 @@ class MonocleValidator:
         for exporter in self.exporters:
             for span in self.memory_exporter.get_finished_spans():
                 if test_failed:
-                    span._attributes["test.status"] = "failed"
+                    span._attributes[TEST_STATUS_ATTRIBUTE] = "failed"
+                    if test_assertion_message is not None:
+                        span._attributes[TEST_ASSERTION_ATTRIBUTE] = test_assertion_message
                 else:
-                    span._attributes["test.status"] = "passed"
+                    span._attributes[TEST_STATUS_ATTRIBUTE] = "passed"
                 exporter.export([span])
             if hasattr(exporter, "force_flush"):
                 exporter.force_flush()
@@ -127,9 +129,10 @@ class MonocleValidator:
         token = start_scopes(all_scopes, context)
         return token
 
-    def post_test_cleanup(self, token:object, test_name:str, test_failed:bool):
+    def post_test_cleanup(self, token:object, test_name:str, test_failed:bool,
+                        test_assertion_message:str = None) -> None:
         try:
-            self.flush_to_exporters(test_name, test_failed)
+            self.flush_to_exporters(test_name, test_failed, test_assertion_message)
         finally:
             self.cleanup()
             if token is not None:
@@ -140,13 +143,26 @@ class MonocleValidator:
         test_case_name = request.node.name if request is not None else (test_case.test_case_name if test_case is not None else "monocle_test")
         token = self.pre_test_run_setup(test_case_name, test_case.mock_tools)
         prior_test_failed_count = request.session.testsfailed
+        validation_failed = False
+        validation_error_message = None
         try:
             yield
+        except Exception as e:
+            # Catch any exception from the test function itself (AssertionError, ClientError, etc.)
+            validation_failed = True
+            validation_error_message = str(e)
+            raise
         finally:
             try:
                 self.validate(test_case)
+            except AssertionError as e:
+                # Catch assertion errors from validate()
+                validation_failed = True
+                validation_error_message = str(e)
+                raise
             finally:
-                self.post_test_cleanup(token, request.node.name, request.session.testsfailed > prior_test_failed_count)
+                test_failed = validation_failed or (request.session.testsfailed > prior_test_failed_count)
+                self.post_test_cleanup(token, request.node.name, test_failed, validation_error_message)
                 self._spans = []
                 if token is not None:
                     stop_scope(token)
@@ -221,19 +237,19 @@ class MonocleValidator:
         return result
 
     @staticmethod
-    async def run_agent_async(agent, agent_type:str, *args, **kwargs):
+    async def run_agent_async(agent, agent_type:str, *args, session_id:str=None, **kwargs):
         agent_runner = get_agent_runner(agent_type)
         if agent_runner is None:
             raise ValueError(f"Unsupported agent type: {agent_type}")
-        result = await agent_runner.run_agent_async(agent, *args, **kwargs)
+        result = await agent_runner.run_agent_async(agent, *args, session_id=session_id, **kwargs)
         return result
 
-    async def test_agent_async(self, agent, agent_type:str, test_case:Union[TestCase, dict]):
+    async def test_agent_async(self, agent, agent_type:str, test_case:Union[TestCase, dict], session_id:str=None):
         if isinstance(test_case, dict):
             test_case = TestCase.model_validate(test_case)
         result = None
         try:
-            result = await MonocleValidator.run_agent_async(agent, agent_type, *test_case.test_input)
+            result = await MonocleValidator.run_agent_async(agent, agent_type, *test_case.test_input, session_id=session_id)
         except Exception as e:
             if not test_case.expect_errors:
                 raise
@@ -484,30 +500,38 @@ class MonocleValidator:
             assert False, f"Agent '{to_agent}' was not delegated by '{from_agent}'."
         return True
 
-    def check_completion_token_limits(self, max_output_tokens:int, positive_test:bool = True) -> bool:
+    def check_completion_token_limits(self, max_output_tokens:int, positive_test:bool = True,
+                                filtered_spans:Optional[list[Span]] = None) -> bool:
         """Verify that the output token limits are respected in the spans.
          Args:
             max_tokens (int): The maximum number of tokens allowed in the output.
          """
         if max_output_tokens is None:
             return True
-        return self._check_token_limits(max_output_tokens, "completion_tokens", positive_test)
+        return self._check_token_limits(max_output_tokens, "completion_tokens", positive_test, filtered_spans)
 
-    def check_total_token_limits(self, max_total_tokens:int, positive_test:bool = True) -> bool:
+    def check_total_token_limits(self, max_total_tokens:int, positive_test:bool = True,
+                                filtered_spans:Optional[list[Span]] = None, custom_message:Optional[str] = None) -> bool:
         """Verify that the output token limits are respected in the spans.
          Args:
             max_tokens (int): The maximum number of tokens allowed in the output.
          """
         if max_total_tokens is None:
             return True
-        return self._check_token_limits(max_total_tokens, "total_tokens", positive_test)
+        return self._check_token_limits(max_total_tokens, "total_tokens", positive_test, filtered_spans, custom_message)
 
-    def _check_token_limits(self, max_tokens:int, token_name:str, positive_test:bool) -> bool:
+    def _check_token_limits(self, max_tokens:int, token_name:str, positive_test:bool,
+                            filtered_spans:Optional[list[Span]] = None, custom_message:Optional[str] = None) -> bool:
         """Verify that the output token limits are respected in the spans.
          Args:
             max_tokens (int): The maximum number of tokens allowed in the output.
          """
-        for span in self.spans:
+        if filtered_spans is None:
+            spans_to_check = self.spans
+        else:
+            spans_to_check = filtered_spans
+        tokens = 0
+        for span in spans_to_check:
             span_attributes = span.attributes
             if (
                 "span.type" in span_attributes
@@ -518,9 +542,83 @@ class MonocleValidator:
                         tokens += event.attributes.get(token_name, 0)
 
         if positive_test:
-            assert tokens <= max_tokens, f" {token_name} limit exceeded: {tokens} > {max_tokens}"
+            assert tokens <= max_tokens, custom_message if custom_message else f" {token_name} limit exceeded: {tokens} > {max_tokens}"
         else:
-            assert tokens > max_tokens, f" {token_name} limit was not exceeded as expected: {tokens} <= {max_tokens}"
+            assert tokens > max_tokens, custom_message if custom_message else f" {token_name} limit was not exceeded as expected: {tokens} <= {max_tokens}"
+        return True
+
+    def check_duration_limits(self, max_duration:float, positive_test:bool = True,
+                                filtered_spans:Optional[list[Span]] = None, units: str = "seconds", span_type: Optional[str] = "workflow", custom_message:Optional[str] = None) -> bool:
+        """Verify that the workflow duration is under the specified limit.
+         Args:
+            max_duration (float): The maximum duration allowed.
+            positive_test (bool): If True, asserts duration is under limit. If False, asserts duration exceeds limit.
+            filtered_spans (Optional[list[Span]]): Spans to check. If None, uses all spans.
+            units (str): The time units for max_duration ("ms","seconds", "minutes"). Default is "seconds".
+            span_type (Optional[str]): The span type to filter spans by. Default is "workflow".
+         """
+        if max_duration is None:
+            return True
+
+        if filtered_spans is None:
+            spans_to_check = self.spans
+        else:
+            spans_to_check = filtered_spans
+
+        if not spans_to_check or len(spans_to_check) == 0:
+            assert False, custom_message if custom_message else "No spans available to check duration."
+        
+        span_types = []
+        if span_type is None or span_type.lower() == "workflow":
+            span_types.append("workflow")
+        elif span_type.lower() == "agent_invocation":
+            span_types.append("agentic.invocation")
+        elif span_type.lower() == "tool_invocation":
+            span_types.append("agentic.tool.invocation")
+        elif span_type.lower() == "agent_turn":
+            span_types.append("agentic.turn")
+        elif span_type.lower() == "inference":
+            span_types.extend(["inference", "inference.framework"])
+        else:
+            assert False, f"Unsupported span type: {span_type}"
+        
+        # set spans to iterable list of spans that match the span types for the given span type
+        spans = []
+        for span in spans_to_check:
+            if "span.type" in span.attributes and span.attributes["span.type"] in span_types:
+                # append valid span to spans list
+                spans.append(span)
+
+        if len(spans) == 0:
+            assert False, f"No spans found with span type '{span_type}' to check duration."
+        
+        # calculate duration for each span; make sure each span doesn't exceed max_duration
+        for span in spans:
+            duration_ns = span.end_time - span.start_time
+            
+            # have calculated duration in nanoseconds, now convert to specified units for comparison
+            if units == "seconds":
+                duration = duration_ns / 1e9
+            elif units == "ms":
+                duration = duration_ns / 1e6
+            elif units == "minutes":
+                duration = duration_ns / (1e9 * 60)
+            else:
+                assert False, f"Unsupported time unit: {units}"
+
+            # specify tool or agent info in assertion message
+            entity_info = ''
+            if span_type.lower() == "tool_invocation" and "entity.1.name" in span.attributes:
+                entity_info = f" for tool '{span.attributes['entity.1.name']}'"
+            elif span_type.lower() == "agent_invocation" and "entity.1.name" in span.attributes:
+                entity_info = f" for agent '{span.attributes['entity.1.name']}'"
+
+            # no span should exceed the duration specified by the user
+            if positive_test:
+                assert duration <= max_duration, custom_message if custom_message else f"Duration limit exceeded {entity_info}: {span_type} took {duration:.2f} {units} (limit: {max_duration} {units})"
+            else:
+                assert duration > max_duration, custom_message if custom_message else f"Duration limit not exceeded as expected {entity_info}: {span_type} took {duration:.2f} {units} (expected to exceed: {max_duration} {units})"
+        
         return True
 
     def _verify_tool_errors(self, tool_name:str, agent_name:str, expect_error:bool, found_error: bool, expect_warnings:bool, found_warning: bool) -> None:
@@ -655,7 +753,7 @@ class MonocleValidator:
                     assert False, f"Agent request span error was expected but no error found."
                 elif not expect_error and found_error:
                     assert False, f"Agent request span error found."
-                
+
                 found_warning = self._span_has_warning(span)
                 if expect_warnings and not found_warning:
                     assert False, f"Agent request span warning was expected but no warning found."
@@ -664,9 +762,11 @@ class MonocleValidator:
                 return span
         return None
 
-    def _get_tool_invocation_spans(self, tool_name:str, agent_name:str = None) -> list:
+    def _get_tool_invocation_spans(self, tool_name:str, agent_name:str = None,
+                                filtered_spans:Optional[list[Span]] = None) -> list:
         tool_invocation_spans = []
-        for span in self.spans:
+        spans_to_check = filtered_spans if filtered_spans is not None else self.spans
+        for span in spans_to_check:
             span_attributes = span.attributes
             if (
                 "span.type" in span_attributes
@@ -676,10 +776,11 @@ class MonocleValidator:
                     and (agent_name is None or (agent_name is not None and span_attributes.get("entity.2.name","") == agent_name)):
                     tool_invocation_spans.append(span)
         return tool_invocation_spans
-    
-    def _get_agent_invocation_spans(self, agent_name:str) -> list:
+
+    def _get_agent_invocation_spans(self, agent_name:str, filtered_spans:Optional[list[Span]] = None) -> list:
         agent_invocation_spans = []
-        for span in self.spans:
+        spans_to_check = filtered_spans if filtered_spans is not None else self.spans
+        for span in spans_to_check:
             span_attributes = span.attributes
             if (
                 "span.type" in span_attributes
@@ -715,7 +816,7 @@ class MonocleValidator:
         if span.status.status_code == StatusCode.ERROR:
             return True
         return False
-    
+
     def _has_warnings(self, expect_warnings: bool) -> bool:
         found_warning = False
         for span in self.spans:

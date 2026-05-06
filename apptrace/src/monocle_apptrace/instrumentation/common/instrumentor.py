@@ -1,6 +1,6 @@
 import logging
 import inspect
-from typing import Collection, Dict, List, Union
+from typing import Collection, Dict, List, Union, Optional
 import uuid
 import inspect
 from opentelemetry import trace
@@ -24,7 +24,10 @@ from monocle_apptrace.instrumentation.common.wrapper_method import (
 from monocle_apptrace.instrumentation.common.wrapper import scope_wrapper, ascope_wrapper, monocle_wrapper, amonocle_wrapper
 from monocle_apptrace.instrumentation.common.utils import (
     load_scopes,
-    setup_readablespan_patch
+    setup_readablespan_patch,
+    set_workflow_name,
+    build_setup_signature,
+    check_duplicate_setup,
 )
 from monocle_apptrace.instrumentation.common.constants import MONOCLE_INSTRUMENTOR, MONOCLE_WORKFLOW_NAME_KEY
 from functools import wraps
@@ -38,6 +41,7 @@ _instruments = ()
 monocle_tracer_provider: TracerProvider = None
 monocle_instrumentor: 'MonocleInstrumentor' = None
 monocle_span_processor:'MonocleSynchronousMultiSpanProcessor' = None
+monocle_setup_signature: Optional[dict] = None
 
 class MonocleSynchronousMultiSpanProcessor(SynchronousMultiSpanProcessor):
     def clear_span_processors(self) -> None:
@@ -142,6 +146,9 @@ class MonocleInstrumentor(BaseInstrumentor):
                 logger.debug(f"ignoring module {e.name}")
 
             except Exception as ex:
+                if target_package == "agent_framework._tools":
+                    logger.debug("ignoring wrap exception for package: agent_framework._tools")
+                    continue
                 logger.error(f"""_instrument wrap exception: {str(ex)}
                             for package: {target_package},
                             object:{target_object},
@@ -162,6 +169,10 @@ class MonocleInstrumentor(BaseInstrumentor):
                              for package: {wrap_package},
                              object:{wrap_object},
                              method:{wrap_method}""")
+        
+        # Clear global state when uninstrumenting
+        set_monocle_instrumentor(None)
+        set_monocle_setup_signature(None)
 
 def set_tracer_provider(tracer_provider: TracerProvider):
     global monocle_tracer_provider
@@ -186,6 +197,14 @@ def set_monocle_span_processor(span_processor: MonocleSynchronousMultiSpanProces
 def get_monocle_span_processor() -> MonocleSynchronousMultiSpanProcessor:
     global monocle_span_processor
     return monocle_span_processor
+
+def set_monocle_setup_signature(signature: Optional[dict]):
+    global monocle_setup_signature
+    monocle_setup_signature = signature
+
+def get_monocle_setup_signature() -> Optional[dict]:
+    global monocle_setup_signature
+    return monocle_setup_signature
 
 def setup_monocle_telemetry(
         workflow_name: str,
@@ -217,7 +236,22 @@ def setup_monocle_telemetry(
         For OTLP exporter, configure the endpoint via OTEL_EXPORTER_OTLP_ENDPOINT environment variable.
         This can't be combined with `span_processors`.
     """
+    current_signature = build_setup_signature(
+        workflow_name=workflow_name,
+        span_processors=span_processors,
+        span_handlers=span_handlers,
+        wrapper_methods=wrapper_methods,
+        union_with_default_methods=union_with_default_methods,
+        monocle_exporters_list=monocle_exporters_list,
+    )
 
+    if check_duplicate_setup(
+        workflow_name=workflow_name,
+        previous_signature=get_monocle_setup_signature(),
+        current_signature=current_signature,
+        instrumentor_exists=get_monocle_instrumentor() is not None,
+    ):
+        return get_monocle_instrumentor()
 
     resource = Resource(attributes={
         SERVICE_NAME: workflow_name
@@ -228,6 +262,7 @@ def setup_monocle_telemetry(
     span_processors = span_processors or [BatchSpanProcessor(exporter) for exporter in exporters]
     set_monocle_span_processor(MonocleSynchronousMultiSpanProcessor())
     set_tracer_provider(TracerProvider(resource=resource, active_span_processor=get_monocle_span_processor()))
+    set_workflow_name(workflow_name)
     
     # Monkey-patch ReadableSpan.to_json to remove 0x prefix from trace_id/span_id
     setup_readablespan_patch()
@@ -250,6 +285,8 @@ def setup_monocle_telemetry(
     if not instrumentor.is_instrumented_by_opentelemetry:
         instrumentor.instrument(trace_provider=get_tracer_provider())
         set_monocle_instrumentor(instrumentor)
+
+    set_monocle_setup_signature(current_signature)
 
     return get_monocle_instrumentor()
 

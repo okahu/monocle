@@ -10,7 +10,9 @@ AWS_LAMBDA_FUNCTION_IDENTIFIER_ENV_NAME = "AWS_LAMBDA_FUNCTION_NAME"
 AZURE_FUNCTION_IDENTIFIER_ENV_NAME = "WEBSITE_SITE_NAME"
 AZURE_APP_SERVICE_IDENTIFIER_ENV_NAME = "WEBSITE_DEPLOYMENT_ID"
 GITHUB_CODESPACE_IDENTIFIER_ENV_NAME = "GITHUB_REPOSITORY"
-
+AGENTCORE_ENV_NAME = "AGENTCORE_RUNTIME_URL"
+AZURE_FOUNDRY_PROJECT_ENDPOINT_ENV_NAME = "PROJECT_ENDPOINT"
+AZURE_FOUNDRY_ALT_PROJECT_ENDPOINT_ENV_NAME = "AZURE_AI_PROJECT_ENDPOINT"
 
 # Azure naming reference can be found here
 # https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations
@@ -20,14 +22,19 @@ AZURE_APP_SERVICE_NAME = "azure_webapp"
 AZURE_ML_SERVICE_NAME = "azure_ml"
 AWS_LAMBDA_SERVICE_NAME = "aws_lambda"
 GITHUB_CODESPACE_SERVICE_NAME = "github_codespace"
+AWS_AGENTCORE_SERVICE_NAME = "aws_agentcore"
+AZURE_FOUNDRY_SERVICE_NAME = "azure_ai_foundry"
 
 # Env variables to identify infra service type
 service_type_map = {
     AZURE_ML_ENDPOINT_ENV_NAME: AZURE_ML_SERVICE_NAME,
-    AZURE_APP_SERVICE_ENV_NAME: AZURE_APP_SERVICE_NAME,
     AZURE_FUNCTION_WORKER_ENV_NAME: AZURE_FUNCTION_NAME,
+    AZURE_APP_SERVICE_ENV_NAME: AZURE_APP_SERVICE_NAME,
     AWS_LAMBDA_ENV_NAME: AWS_LAMBDA_SERVICE_NAME,
     GITHUB_CODESPACE_ENV_NAME: GITHUB_CODESPACE_SERVICE_NAME,
+    AGENTCORE_ENV_NAME: AWS_AGENTCORE_SERVICE_NAME,
+    AZURE_FOUNDRY_PROJECT_ENDPOINT_ENV_NAME: AZURE_FOUNDRY_SERVICE_NAME,
+    AZURE_FOUNDRY_ALT_PROJECT_ENDPOINT_ENV_NAME: AZURE_FOUNDRY_SERVICE_NAME,
 }
 
 # Env variables to identify infra service name
@@ -37,6 +44,8 @@ service_name_map = {
     AZURE_ML_SERVICE_NAME: AZURE_ML_ENDPOINT_ENV_NAME,
     AWS_LAMBDA_SERVICE_NAME: AWS_LAMBDA_FUNCTION_IDENTIFIER_ENV_NAME,
     GITHUB_CODESPACE_SERVICE_NAME: GITHUB_CODESPACE_IDENTIFIER_ENV_NAME,
+    AWS_AGENTCORE_SERVICE_NAME: AGENTCORE_ENV_NAME,
+    AZURE_FOUNDRY_SERVICE_NAME: AZURE_FOUNDRY_PROJECT_ENDPOINT_ENV_NAME,
 }
 
 
@@ -64,6 +73,8 @@ llm_type_map = {
     "chatgooglegenerativeai": "gemini",
     "azurechatcompletion": "azure_openai",
     "openaichatcompletion": "openai",
+    "runtimeforbedrockdataautomation": "aws_bedrock",
+    "agentsforbedrockruntime": "aws_bedrock",
 }
 
 MONOCLE_INSTRUMENTOR = "monocle_apptrace"
@@ -90,6 +101,8 @@ MONOCLE_SDK_LANGUAGE = "monocle_apptrace.language"
 MONOCLE_DETECTED_SPAN_ERROR = "monocle_apptrace.detected_span_error"
 HTTP_SUCCESS_CODES = ("200", "201", "202", "204", "205", "206")
 CHILD_ERROR_CODE = "child.error.code"
+HEALTH_RESET_COUNTER = 100
+HTTP_HEALTH_CHECK_METHODS = ["get", "head"]
 
 AGENT_PREFIX_KEY = "monocle.agent.prefix"
 AGENT_NAME_KEY = "monocle.agent.name"
@@ -112,6 +125,7 @@ SCOPE_NAME = "scope_name"
 AGENT_INVOCATION_SPAN_NAME = "agentic.invocation"
 AGENT_REQUEST_SPAN_NAME = "agentic.turn"
 AGENT_SESSION = "agentic.session"
+AGENT_EXECUTION_ID = "agentic.executionId"
 LAST_INFERENCE = "last.inference"
 INFERENCE_DECISION = "inference.decision.span.id"
 
@@ -203,6 +217,8 @@ class SPAN_SUBTYPES:
     # uncategorized / generic
     GENERIC = SPAN_SUBTYPE_GENERIC
 
+    ASGI = "asgi"
+
 
 MAP_ATTRIBUTES_TO_SPAN_SUBTYPE = {
     # inference attributes
@@ -228,3 +244,6 @@ PROVIDER_BASE_URLS = {
     "deepseek": "https://api.deepseek.com",
     # Add more providers here later
 }
+
+SPAN_START_TIME:str = "monocle_span_start_time"
+SPAN_END_TIME:str = "monocle_span_end_time"

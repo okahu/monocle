@@ -51,6 +51,7 @@ jobs:
       OPENSEARCH_ENDPOINT_URL: ${{ secrets.OPENSEARCH_ENDPOINT_URL }}
       OPENSEARCH_ENDPOINT_URL_BOTO: ${{ secrets.OPENSEARCH_ENDPOINT_URL_BOTO }}
       OPENSEARCH_BEDROCK_ENDPOINT_URL_BOTO: ${{ secrets.OPENSEARCH_BEDROCK_ENDPOINT_URL_BOTO }}
+      OPENSEARCH_ENDPOINT_URL_BOTO_SAGEMAKER: ${{ vars.OPENSEARCH_ENDPOINT_URL_BOTO_SAGEMAKER }}
       OPEN_SEARCH_AUTH_PASSWORD: ${{ secrets.OPEN_SEARCH_AUTH_PASSWORD }}
       OPEN_SEARCH_AUTH_USER: ${{ secrets.OPEN_SEARCH_AUTH_USER }}
       OPEN_SEARCH_DOCSTORE_ENDPOINT: ${{ secrets.OPEN_SEARCH_DOCSTORE_ENDPOINT }}
@@ -66,11 +67,18 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GITHUB_TOKEN: ${{ secrets.EXPORTER_GITHUB_TOKEN }}
       GOOGLE_GENAI_USE_VERTEXAI: True
-  
+      KNOWLEDGE_BASE_ID: ${{ vars.KNOWLEDGE_BASE_ID }}
+      PROFILE_ARN: ${{ vars.PROFILE_ARN }}
+      MONOCLE_GCS_BUCKET_NAME: ${{ vars.MONOCLE_GCS_BUCKET_NAME }}
+      MONOCLE_GCS_LOCATION: ${{ vars.MONOCLE_GCS_LOCATION }}
+      MONOCLE_GCS_PROJECT_ID: ${{ vars.MONOCLE_GCS_PROJECT_ID }}
+      GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
+    
+      
     permissions:
       contents: 'read'
       id-token: 'write'
-      
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -114,11 +122,13 @@ jobs:
           pip install -e '.[dev]'
           pip install -e '.[azure]'
           pip install -e '.[aws]'
+          pip install -e '.[gcp]'
 
           pip show monocle-apptrace
           pip show monocle-mcp
           pip show monocle-test-tools
 
+                
       - uses: 'google-github-actions/auth@v3'
         with:
           service_account: 'okahu-github-action-sa@fluent-radar-408119.iam.gserviceaccount.com'

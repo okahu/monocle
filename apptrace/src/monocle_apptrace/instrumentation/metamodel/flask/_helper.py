@@ -1,10 +1,11 @@
 import logging
 from threading import local
 from monocle_apptrace.instrumentation.common.utils import extract_http_headers, clear_http_scopes, get_exception_status_code
-from monocle_apptrace.instrumentation.common.span_handler import SpanHandler
+from monocle_apptrace.instrumentation.common.span_handler import SpanHandler, HttpSpanHandler
 from monocle_apptrace.instrumentation.common.constants import HTTP_SUCCESS_CODES
 from monocle_apptrace.instrumentation.common.utils import MonocleSpanException
 from urllib.parse import unquote
+import json
 from opentelemetry.context import get_current
 from opentelemetry.trace import Span, get_current_span
 from opentelemetry.trace.propagation import _SPAN_KEY
@@ -20,7 +21,11 @@ def get_method(args) -> str:
 
 def get_params(args) -> dict:
     params = args[0]['QUERY_STRING'] if 'QUERY_STRING' in args[0] else ""
-    return unquote(params)
+    if params:
+        return unquote(params)
+    if 'werkzeug.request' in args[0] and hasattr(args[0]['werkzeug.request'],'data'):
+        return unquote(args[0]['werkzeug.request'].data)
+
 
 def get_url(args) -> str:
     url = ""
@@ -36,6 +41,15 @@ def get_body(args) -> dict:
 def extract_response(instance) -> str:
     if hasattr(instance, 'data') and hasattr(instance, 'content_length'):
         response = instance.data[0:max(instance.content_length, MAX_DATA_LENGTH)]
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+        try:
+            parsed = json.loads(response)
+            if isinstance(parsed, (dict, list)) and not parsed:
+                return ""
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return unquote(response) if response else ""
     else:
         response = ""
     return response
@@ -64,7 +78,7 @@ def flask_pre_tracing(args):
 def flask_post_tracing(token):
     clear_http_scopes(token)
 
-class FlaskSpanHandler(SpanHandler):
+class FlaskSpanHandler(HttpSpanHandler):
 
     def pre_tracing(self, to_wrap, wrapped, instance, args, kwargs):
         return flask_pre_tracing(args), None
@@ -73,13 +87,18 @@ class FlaskSpanHandler(SpanHandler):
         flask_post_tracing(token)
 
 class FlaskResponseSpanHandler(SpanHandler):
-    def post_tracing(self, to_wrap, wrapped, instance, args, kwargs, return_value, token):
+    # This span is only used to collect the data.input and data.output events and merge with parent span.
+    # It's never exported by itself.
+    def should_sample(self, to_wrap, wrapped, instance, args, kwargs, result, ex, span:Span, parent_span:Span) -> bool:
+        return False
+
+    def post_task_processing(self, to_wrap, wrapped, instance, args, kwargs, result, ex, span:Span, parent_span:Span):
         try:
-            _parent_span_context = get_current()
-            if _parent_span_context is not None:
-                parent_span: Span = _parent_span_context.get(_SPAN_KEY, None)
-                if parent_span is not None:
-                    self.hydrate_events(to_wrap, wrapped, instance, args, kwargs, return_value, parent_span=parent_span)
+            if parent_span is not None:
+                self.hydrate_events(to_wrap, wrapped, instance, args, kwargs,
+                                    result, span=parent_span, is_post_exec=False)
+                self.hydrate_events(to_wrap, wrapped, instance, args, kwargs,
+                                    result, span=parent_span, is_post_exec=True)
         except Exception as e:
-            logger.info(f"Failed to propogate flask response: {e}")
-        super().post_tracing(to_wrap, wrapped, instance, args, kwargs, return_value, token)
+            logger.info(f"Failed to propagate flask response: {e}")
+        super().post_task_processing(to_wrap, wrapped, instance, args, kwargs, result, ex, span, parent_span)
