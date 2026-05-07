@@ -65,14 +65,19 @@ jobs:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
-      VERTEX_AI_API_KEY: ${{ secrets.VERTEX_AI_API_KEY }}
       GITHUB_TOKEN: ${{ secrets.EXPORTER_GITHUB_TOKEN }}
+      GOOGLE_GENAI_USE_VERTEXAI: True
       KNOWLEDGE_BASE_ID: ${{ vars.KNOWLEDGE_BASE_ID }}
       PROFILE_ARN: ${{ vars.PROFILE_ARN }}
       MONOCLE_GCS_BUCKET_NAME: ${{ vars.MONOCLE_GCS_BUCKET_NAME }}
       MONOCLE_GCS_LOCATION: ${{ vars.MONOCLE_GCS_LOCATION }}
       MONOCLE_GCS_PROJECT_ID: ${{ vars.MONOCLE_GCS_PROJECT_ID }}
       GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
+    
+      
+    permissions:
+      contents: 'read'
+      id-token: 'write'
 
     steps:
       - name: Checkout repository
@@ -115,6 +120,12 @@ jobs:
           pip install -e '.[azure]'
           pip install -e '.[aws]'
           pip install -e '.[gcp]'
+              
+      - uses: 'google-github-actions/auth@v3'
+        with:
+          service_account: 'okahu-github-action-sa@fluent-radar-408119.iam.gserviceaccount.com'
+          workload_identity_provider: 'projects/564509919381/locations/global/workloadIdentityPools/github-pool/providers/github'
+
       - name: Run Unit tests
         id: run-unit-tests
         run: |
