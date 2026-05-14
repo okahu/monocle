@@ -45,12 +45,12 @@ monocle_setup_signature: Optional[dict] = None
 
 class MonocleSynchronousMultiSpanProcessor(SynchronousMultiSpanProcessor):
     def clear_span_processors(self) -> None:
-        """Adds a SpanProcessor to the list handled by this instance."""
+        """Clears all span processors from the list handled by this instance."""
         with self._lock:
             for span_processor in self._span_processors:
                 span_processor.force_flush()
                 span_processor.shutdown()
-                self._span_processors = ()
+            self._span_processors = ()
 
 class MonocleInstrumentor(BaseInstrumentor):
     workflow_name: str = ""
@@ -173,6 +173,8 @@ class MonocleInstrumentor(BaseInstrumentor):
         # Clear global state when uninstrumenting
         set_monocle_instrumentor(None)
         set_monocle_setup_signature(None)
+        set_monocle_span_processor(None)
+        set_tracer_provider(None)
 
 def set_tracer_provider(tracer_provider: TracerProvider):
     global monocle_tracer_provider
@@ -291,11 +293,36 @@ def setup_monocle_telemetry(
     return get_monocle_instrumentor()
 
 def reset_span_processors(span_processors:list[SpanProcessor]):
+    from opentelemetry import trace
+    
     monocle_span_processor = get_monocle_span_processor()
     if monocle_span_processor:
         monocle_span_processor.clear_span_processors()
         for span_processor in span_processors:
             monocle_span_processor.add_span_processor(span_processor)
+    
+    # Also reset processors on the global OpenTelemetry tracer provider
+    tracer_provider_default = trace.get_tracer_provider()
+    provider_type = type(tracer_provider_default).__name__
+    is_proxy_provider = "Proxy" in provider_type
+    
+    if not is_proxy_provider and hasattr(tracer_provider_default, '_active_span_processor'):
+        # Clear old processors from the global provider's MultiSpanProcessor
+        if hasattr(tracer_provider_default._active_span_processor, '_span_processors'):
+            old_processors = list(tracer_provider_default._active_span_processor._span_processors)
+            for old_processor in old_processors:
+                try:
+                    old_processor.force_flush()
+                    old_processor.shutdown()
+                except:
+                    pass
+            # Clear the processors tuple
+            tracer_provider_default._active_span_processor._span_processors = ()
+        
+        # Add new processors with on_start callback
+        for processor in span_processors:
+            processor.on_start = on_processor_start
+            tracer_provider_default.add_span_processor(processor)
 
 def on_processor_start(span: Span, parent_context):
     context_properties = get_value(SESSION_PROPERTIES_KEY)
@@ -325,4 +352,3 @@ from monocle_apptrace.instrumentation.common.method_wrappers import (
     stop_trace,
     http_route_handler
 )
-
