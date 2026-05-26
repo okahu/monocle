@@ -12,7 +12,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcess
 # Import Microsoft Agent Framework components
 try:
     from agent_framework.openai import OpenAIChatClient
-    from azure.identity.aio import AzureCliCredential
     MICROSOFT_AGENT_AVAILABLE = True
 except ImportError:
     MICROSOFT_AGENT_AVAILABLE = False
