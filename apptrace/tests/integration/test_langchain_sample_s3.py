@@ -24,17 +24,29 @@ from monocle_apptrace.instrumentation.common.instrumentor import (
 )
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-exporter = S3SpanExporter(
-    region_name=os.getenv("MONOCLE_S3_REGION_NAME"),
-    bucket_name=os.getenv("MONOCLE_S3_BUCKET_NAME")
-)
 logger = logging.getLogger(__name__)
+
+# Check if S3 configuration is available
+S3_REGION = os.getenv("MONOCLE_S3_REGION_NAME")
+S3_BUCKET = os.getenv("MONOCLE_S3_BUCKET_NAME")
+S3_CONFIGURED = bool(S3_REGION and S3_REGION.strip() and S3_BUCKET and S3_BUCKET.strip())
+
+# Only create exporter if S3 is properly configured
+if S3_CONFIGURED:
+    exporter = S3SpanExporter(
+        region_name=S3_REGION,
+        bucket_name=S3_BUCKET
+    )
+else:
+    exporter = None
 
 @pytest.fixture(scope="module")
 def setup():
     logging.basicConfig(level=logging.INFO)
     load_dotenv()
     custom_exporter = CustomConsoleSpanExporter()
+    if not S3_CONFIGURED:
+        pytest.skip("S3 not configured - MONOCLE_S3_REGION_NAME and MONOCLE_S3_BUCKET_NAME required")
     try:
         instrumentor = setup_monocle_telemetry(
                     workflow_name="langchain_app_1",
@@ -47,6 +59,7 @@ def setup():
         if instrumentor and instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.uninstrument()
 
+@pytest.mark.skipif(not S3_CONFIGURED, reason="S3 not configured")
 def test_langchain_sample_s3(setup):
 
     llm = ChatOpenAI(model="gpt-3.5-turbo-0125")

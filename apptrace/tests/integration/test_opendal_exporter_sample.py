@@ -17,8 +17,6 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from monocle_apptrace.exporters.aws.s3_exporter_opendal import OpenDALS3Exporter
-from monocle_apptrace.exporters.azure.blob_exporter_opendal import OpenDALAzureExporter
 from monocle_apptrace.instrumentation.common.instrumentor import (
     set_context_properties,
     setup_monocle_telemetry,
@@ -27,16 +25,39 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 logger = logging.getLogger(__name__)
 
-exporter_s3 = OpenDALS3Exporter(
-    region_name=os.getenv("MONOCLE_S3_REGION_NAME"),
-    bucket_name=os.getenv("MONOCLE_S3_BUCKET_NAME")
-)
+# Check if OpenDAL is available
+try:
+    from monocle_apptrace.exporters.aws.s3_exporter_opendal import OpenDALS3Exporter
+    from monocle_apptrace.exporters.azure.blob_exporter_opendal import OpenDALAzureExporter
+    OPENDAL_AVAILABLE = True
+except ImportError:
+    OPENDAL_AVAILABLE = False
+    OpenDALS3Exporter = None
+    OpenDALAzureExporter = None
+
+# Check if S3 configuration is available
+S3_REGION = os.getenv("MONOCLE_S3_REGION_NAME")
+S3_BUCKET = os.getenv("MONOCLE_S3_BUCKET_NAME")
+S3_CONFIGURED = bool(S3_REGION and S3_REGION.strip() and S3_BUCKET and S3_BUCKET.strip())
+
+# Only create exporter if OpenDAL is available and S3 is properly configured
+if OPENDAL_AVAILABLE and S3_CONFIGURED:
+    exporter_s3 = OpenDALS3Exporter(
+        region_name=S3_REGION,
+        bucket_name=S3_BUCKET
+    )
+else:
+    exporter_s3 = None
 
 @pytest.fixture(scope="module")
 def setup():
     logging.basicConfig(level=logging.INFO)
     load_dotenv()
     custom_exporter = CustomConsoleSpanExporter()
+    if not OPENDAL_AVAILABLE:
+        pytest.skip("OpenDAL not installed - required for OpenDAL exporters")
+    if not S3_CONFIGURED:
+        pytest.skip("S3 not configured - MONOCLE_S3_REGION_NAME and MONOCLE_S3_BUCKET_NAME required")
     try:
         instrumentor = setup_monocle_telemetry(
                     workflow_name="langchain_app_1",
@@ -50,6 +71,8 @@ def setup():
         if instrumentor and instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.uninstrument()
 
+@pytest.mark.skipif(not OPENDAL_AVAILABLE, reason="OpenDAL not installed")
+@pytest.mark.skipif(not S3_CONFIGURED, reason="S3 not configured")
 def test_langchain_sample_s3(setup):
 
     llm = ChatOpenAI(model="gpt-3.5-turbo-0125")
