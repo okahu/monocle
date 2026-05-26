@@ -11,7 +11,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcess
 
 # Import Microsoft Agent Framework components
 try:
-    from agent_framework.openai import OpenAIChatClient
+    from agent_framework.openai import OpenAIChatCompletionClient
     from azure.identity.aio import AzureCliCredential
     MICROSOFT_AGENT_AVAILABLE = True
 except ImportError:
@@ -49,7 +49,7 @@ api_key = os.getenv("AZURE_OPENAI_API_KEY") if MICROSOFT_AGENT_AVAILABLE else No
 
 # Initialize Azure OpenAI client and agents at module level
 if MICROSOFT_AGENT_AVAILABLE and azure_endpoint and model:
-    client = OpenAIChatClient(
+    client = OpenAIChatCompletionClient(
         model=model,
         azure_endpoint=azure_endpoint,
         api_key=api_key,
