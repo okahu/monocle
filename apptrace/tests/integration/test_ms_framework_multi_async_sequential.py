@@ -8,7 +8,7 @@ from common.custom_exporter import CustomConsoleSpanExporter
 from monocle_apptrace.exporters.file_exporter import FileSpanExporter
 from monocle_apptrace.instrumentation.common.instrumentor import setup_monocle_telemetry
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
-from agent_framework import SequentialBuilder
+from agent_framework import WorkflowBuilder
 try:
     from agent_framework.openai import OpenAIChatClient
     from azure.identity.aio import AzureCliCredential
@@ -91,12 +91,12 @@ if MICROSOFT_AGENT_AVAILABLE and azure_endpoint and model:
 
     # Create sequential workflow: flight -> hotel -> summarizer
     workflow = (
-        SequentialBuilder()
-        .register_participants([
-            lambda: flight_agent, 
-            lambda: hotel_agent, 
-            lambda: summarizer_agent
-        ])
+        WorkflowBuilder(
+            name="sequential_travel_booking",
+            start_executor=flight_agent
+        )
+        .add_edge(flight_agent, hotel_agent)
+        .add_edge(hotel_agent, summarizer_agent)
         .build()
     )
     
