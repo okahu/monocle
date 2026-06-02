@@ -3,10 +3,10 @@ name: Run Monocle Unit and Integration Tests
 on:
   push:
     branches:
-      - "**"
+      - "main"
   pull_request:
     branches:
-      - "main"
+      - "**"
   workflow_dispatch:
 
 # Define concurrency group based on workflow name
