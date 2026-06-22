@@ -4,6 +4,7 @@ A comprehensive testing and validation framework for monocle AI agent tracing. T
 
 ## Features
 
+- **Test Generator**: Automatically generate test code from trace files
 - **Agentic Response**: Verify that agent requests get the appropriate response.
 - **Agent Invocation**: Verify that specific agents are invoked and delegate tasks correctly.
 - **Tool Validation**: Ensure tools are called with expected inputs and produce expected outputs.
@@ -158,6 +159,31 @@ monocle_trace_asserter.contains_input(
 )
 ```
 
+#### Count and aggregate assertions
+
+Assert specific or total invocation counts for agents and tools:
+
+```python
+# Exact count: retry agent called exactly 3 times
+monocle_trace_asserter.called_agent("retry_agent", count=3)
+
+# Range: worker agent called 2-5 times
+monocle_trace_asserter.called_agent("worker_agent", min_count=2, max_count=5)
+
+# Min only: search tool called at least once
+monocle_trace_asserter.called_tool("search_tool", min_count=1)
+
+# Max only: expensive API called at most twice
+monocle_trace_asserter.called_tool("expensive_api", max_count=2)
+
+# Total agent invocations across all agents
+monocle_trace_asserter.called_agents(count=10)  # Exactly 10 agent calls total
+monocle_trace_asserter.called_agents(min_count=5, max_count=15)  # Between 5-15 calls
+
+# Total tool invocations across all tools
+monocle_trace_asserter.called_tools(max_count=20)  # At most 20 tool calls total
+```
+
 ---
 
 ## Framework Examples
@@ -307,6 +333,82 @@ def test_tool_span(validator):
     )
     validator.validate(test_case)
 ```
+
+---
+
+## Test Generator
+
+Automatically generate test code by analyzing trace files. The generator scans spans and creates Python test assertions for agents, tools, and outputs.
+
+### Quick Start
+
+```bash
+# Generate test code from a trace file
+python -m monocle_test_tools.generate_test trace.json
+
+# With custom test name
+python -m monocle_test_tools.generate_test trace.json --test-name test_my_agent
+
+# Save to file
+python -m monocle_test_tools.generate_test trace.json > test_generated.py
+```
+
+### Example Output
+
+```python
+import pytest
+from monocle_test_tools import TraceAssertion
+from monocle_test_tools.span_loader import JSONSpanLoader
+
+def test_generated(monocle_trace_asserter: TraceAssertion):
+    """Auto-generated test from trace analysis."""
+    
+    # Option 1: Load from JSON file
+    spans = JSONSpanLoader.from_json("path/to/trace.json")
+    # monocle_trace_asserter.validator.add_remote_spans(spans)
+    
+    # Option 2: Load from Okahu
+    # from monocle_test_tools.span_loader import OkahuSpanLoader
+    # spans = OkahuSpanLoader.get_spans(workflow_name="your_workflow", trace_id="trace_id")
+    # monocle_trace_asserter.validator.add_remote_spans(spans)
+    
+    # Option 3: Run agent directly
+    # from your_module import your_agent
+    # await monocle_trace_asserter.run_agent_async(your_agent, "framework_name", "user input")
+    
+    asserter = monocle_trace_asserter
+    
+    # Agent invocations with output checks
+    asserter.called_agent("travel_agent").contains_output("Successfully booked")
+    asserter.called_agent("hotel_agent").contains_output("Marriott reservation confirmed")
+    
+    # Tool invocations
+    asserter.called_tool("book_flight", "travel_agent")
+    asserter.called_tool("book_hotel", "hotel_agent")
+```
+
+### Python API
+
+```python
+from monocle_test_tools.test_generator import TestGenerator
+
+# From local file
+generator = TestGenerator.from_json_file("trace.json")
+test_code = generator.generate_test_code(test_name="test_my_agent")
+print(test_code)
+
+# Write to file
+generator.write_to_file("test_my_agent.py")
+
+# From Okahu
+generator = TestGenerator.from_okahu(trace_id="abc123", workflow_name="my_app")
+print(generator.generate_test_code())
+```
+
+The generator extracts:
+- **Agent invocations** with output checks (first 80 chars as key phrase)
+- **Tool invocations** with parent agent references
+- **Sorted by invocation order** for readability
 
 ---
 
@@ -555,10 +657,12 @@ The `monocle_trace_asserter` fixture provides a `TraceAssertion` instance. All a
 
 | Method | Description |
 |---|---|
-| `called_tool(tool_name, agent_name=None)` | Assert a tool was called; narrows context to those spans |
+| `called_tool(tool_name, agent_name=None, count=None, min_count=None, max_count=None)` | Assert a tool was called; narrows context to those spans. Optional: `count` for exact count, `min_count`/`max_count` for range |
 | `does_not_call_tool(tool_name, agent_name=None)` | Assert a tool was NOT called |
-| `called_agent(agent_name)` | Assert an agent was called; narrows context to those spans |
+| `called_agent(agent_name, count=None, min_count=None, max_count=None)` | Assert an agent was called; narrows context to those spans. Optional: `count` for exact count, `min_count`/`max_count` for range |
 | `does_not_call_agent(agent_name)` | Assert an agent was NOT called |
+| `called_agents(count=None, min_count=None, max_count=None)` | Assert total number of agent invocations across all agents. Optional: `count` for exact count, `min_count`/`max_count` for range |
+| `called_tools(count=None, min_count=None, max_count=None)` | Assert total number of tool invocations across all tools. Optional: `count` for exact count, `min_count`/`max_count` for range |
 
 ### Input assertions
 

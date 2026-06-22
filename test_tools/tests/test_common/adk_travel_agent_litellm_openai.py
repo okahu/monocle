@@ -11,7 +11,12 @@ from google.genai import types
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "FALSE"  # Set to TRUE to use Vertex AI
 MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "1000"))
 # Set env model as gemini-2.5-flash-lite by default
-GOOGLE_GENAI_MODEL = os.getenv("GOOGLE_GENAI_MODEL", "gemini-3.5-flash-lite")
+GOOGLE_GENAI_MODEL = os.getenv("GOOGLE_GENAI_MODEL", "gemini-2.5-flash-lite")
+
+from google.adk.models.lite_llm import LiteLlm
+
+model_name = os.getenv("SHIPPING_MODEL", "gpt-4o")
+model=LiteLlm(model=model_name)
 
 # ---------------------------------------------------------------------------
 # Legacy "_5" suffixed tools/agents kept for back-compat with existing tests
@@ -36,7 +41,7 @@ def adk_book_hotel_5(hotel_name: str, city: str, check_in_date: str, duration: i
 
 flight_booking_agent = LlmAgent(
     name="adk_flight_booking_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Agent to book flights based on user queries.",
     instruction="You are a helpful agent who can assist users in booking flights. You only handle flight booking. Just handle that part from what the user says, ignore other parts of the requests.",
     tools=[adk_book_flight_5]
@@ -44,7 +49,7 @@ flight_booking_agent = LlmAgent(
 
 hotel_booking_agent = LlmAgent(
     name="adk_hotel_booking_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Agent to book hotels based on user queries.",
     instruction="You are a helpful agent who can assist users in booking hotels. You only handle hotel booking. Just handle that part from what the user says, ignore other parts of the requests.",
     tools=[adk_book_hotel_5]
@@ -52,7 +57,7 @@ hotel_booking_agent = LlmAgent(
 
 trip_summary_agent = LlmAgent(
     name="adk_trip_summary_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Summarize the travel details from hotel bookings and flight bookings agents.",
     instruction="Summarize the travel details from hotel bookings and flight bookings agents. Be concise in response and provide a single sentence summary.",
     output_key="booking_summary"
@@ -73,7 +78,7 @@ root_agent = SequentialAgent(
 # does not allow re-parenting the same LlmAgent into a second tree.
 flight_booking_agent_parallel = LlmAgent(
     name="adk_flight_booking_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Agent to book flights based on user queries.",
     instruction="You are a helpful agent who can assist users in booking flights. You only handle flight booking. Just handle that part from what the user says, ignore other parts of the requests.",
     tools=[adk_book_flight_5]
@@ -81,7 +86,7 @@ flight_booking_agent_parallel = LlmAgent(
 
 hotel_booking_agent_parallel = LlmAgent(
     name="adk_hotel_booking_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Agent to book hotels based on user queries.",
     instruction="You are a helpful agent who can assist users in booking hotels. You only handle hotel booking. Just handle that part from what the user says, ignore other parts of the requests.",
     tools=[adk_book_hotel_5]
@@ -89,7 +94,7 @@ hotel_booking_agent_parallel = LlmAgent(
 
 trip_summary_agent_parallel = LlmAgent(
     name="adk_trip_summary_agent_5",
-    model=GOOGLE_GENAI_MODEL,
+    model=model,
     description="Summarize the travel details from hotel bookings and flight bookings agents.",
     instruction="Summarize the travel details from hotel bookings and flight bookings agents. Be concise in response and provide a single sentence summary.",
     output_key="booking_summary"
