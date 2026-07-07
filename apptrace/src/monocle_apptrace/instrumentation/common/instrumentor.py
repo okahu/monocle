@@ -141,8 +141,11 @@ class MonocleInstrumentor(BaseInstrumentor):
 
     def _instrument(self, **kwargs):
         tracer_provider: TracerProvider = kwargs.get("tracer_provider")
-        set_tracer_provider(tracer_provider)
-        tracer = get_tracer(instrumenting_module_name=MONOCLE_INSTRUMENTOR, tracer_provider=tracer_provider)
+        if tracer_provider is not None:
+            set_tracer_provider(tracer_provider)
+        # Always bind the instrumented tracer to monocle's own provider so spans
+        # flow through the monocle span processor regardless of the global provider.
+        tracer = get_tracer(instrumenting_module_name=MONOCLE_INSTRUMENTOR, tracer_provider=get_tracer_provider())
 
         final_method_list = []
         if self.union_with_default_methods is True:
@@ -315,10 +318,10 @@ def setup_monocle_telemetry(
     set_monocle_span_processor(MonocleSynchronousMultiSpanProcessor())
     set_tracer_provider(TracerProvider(resource=resource, active_span_processor=get_monocle_span_processor()))
     set_workflow_name(workflow_name)
-    
+
     # Monkey-patch ReadableSpan.to_json to remove 0x prefix from trace_id/span_id
     setup_readablespan_patch()
-    
+
     attach(set_value(MONOCLE_WORKFLOW_NAME_KEY, workflow_name))
     tracer_provider_default = trace.get_tracer_provider()
     provider_type = type(tracer_provider_default).__name__
@@ -331,11 +334,27 @@ def setup_monocle_telemetry(
             get_tracer_provider().add_span_processor(processor)
     if is_proxy_provider:
         trace.set_tracer_provider(get_tracer_provider())
+    else:
+        # OpenTelemetry only honors the first set_tracer_provider() per process, so when a
+        # global provider already exists (e.g. installed by an earlier monocle setup) our
+        # freshly created provider above cannot become global -- spans flow through the
+        # existing global provider instead. Point monocle's bookkeeping at that live provider
+        # so the instrumented tracer, and especially reset_span_processors(), operate on the
+        # span processor that actually receives spans rather than an orphaned one.
+        set_tracer_provider(tracer_provider_default)
+        active_processor = getattr(tracer_provider_default, "_active_span_processor", None)
+        # The live provider's active processor is the one that actually receives spans. It is
+        # normally a MonocleSynchronousMultiSpanProcessor (installed by an earlier monocle
+        # setup) but may be a plain SynchronousMultiSpanProcessor if another component (or a
+        # test) installed the global provider. Track it either way so reset_span_processors()
+        # operates on the processor spans really flow through.
+        if isinstance(active_processor, SynchronousMultiSpanProcessor):
+            set_monocle_span_processor(active_processor)
     instrumentor = MonocleInstrumentor(user_wrapper_methods=wrapper_methods or [], exporters=exporters,
                                        handlers=span_handlers, union_with_default_methods = union_with_default_methods)
     # instrumentor.app_name = workflow_name
     if not instrumentor.is_instrumented_by_opentelemetry:
-        instrumentor.instrument(trace_provider=get_tracer_provider())
+        instrumentor.instrument(tracer_provider=get_tracer_provider())
         set_monocle_instrumentor(instrumentor)
 
     set_monocle_setup_signature(current_signature)
@@ -345,7 +364,18 @@ def setup_monocle_telemetry(
 def reset_span_processors(span_processors:list[SpanProcessor]):
     monocle_span_processor = get_monocle_span_processor()
     if monocle_span_processor:
-        monocle_span_processor.clear_span_processors()
+        clear = getattr(monocle_span_processor, "clear_span_processors", None)
+        if callable(clear):
+            clear()
+        else:
+            # The tracked processor may be a plain SynchronousMultiSpanProcessor (e.g. when the
+            # global provider was installed outside monocle). Flush, shut down, and drop its
+            # child processors the same way clear_span_processors does.
+            with monocle_span_processor._lock:
+                for sp in monocle_span_processor._span_processors:
+                    sp.force_flush()
+                    sp.shutdown()
+                monocle_span_processor._span_processors = ()
         for span_processor in span_processors:
             monocle_span_processor.add_span_processor(span_processor)
 
