@@ -10,7 +10,7 @@ commands = [
 
 [project]
 name = "monocle_apptrace"
-version = "0.7.0"
+version = "0.8.7b1"
 authors = [
   { name="Okahu Inc.", email="okahu-pypi@okahu.ai" },
 ]
@@ -172,6 +172,10 @@ opentelemetry-exporter = [
 
 gcp = [
     'google-cloud-storage==2.18.0',
+]
+
+postgres = [
+    'psycopg2-binary',
 ]
 
 
