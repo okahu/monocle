@@ -11,13 +11,7 @@ logger = logging.getLogger(__name__)
 
 class TestHandler(unittest.TestCase):
     def setUp(self):
-        # Make each test hermetic. Two things otherwise leak configuration in:
-        # (1) ambient shell env vars, and (2) get_monocle_env_value() falling back
-        # to ./.env.monocle and ~/.monocle/.env when a var is unset, so a developer's
-        # global okahu config would flip the expected exporter. patch.dict(clear=True)
-        # isolates and auto-restores os.environ (replacing the per-test
-        # os.environ.clear(), which polluted other test modules), and patching
-        # get_monocle_env_value forces config lookups to consult only the isolated env.
+        # Isolate each test from ambient env vars and .env file lookups to prevent config leakage.
         self._env_patcher = patch.dict(os.environ, {}, clear=True)
         self._env_patcher.start()
         self._env_value_patcher = patch(
