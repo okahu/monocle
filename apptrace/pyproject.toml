@@ -88,6 +88,7 @@ dev = [
   'faiss-cpu==1.8.0',
   'pytest>=8.0.0',
   'pytest-venv',
+  'beautifulsoup4',  # bs4 is imported directly by test helpers (tests/common); no longer pulled transitively by llama-index 0.14
   'llama-index==0.14.23',
   'llama-index-llms-openai>=0.6.0',  # Updated to support openai>=2 (required by crewai)
   'llama-index-tools-mcp==0.4.8',
