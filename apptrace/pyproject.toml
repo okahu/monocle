@@ -89,21 +89,21 @@ dev = [
   'pytest>=8.0.0',
   'pytest-venv',
   'beautifulsoup4',  # bs4 is imported directly by test helpers (tests/common); no longer pulled transitively by llama-index 0.14
-  'llama-index==0.14.23',
-  'llama-index-llms-openai>=0.6.0',  # Updated to support openai>=2 (required by crewai)
-  'llama-index-tools-mcp==0.4.8',
-  'llama-index-embeddings-huggingface==0.7.0',
-  'llama-index-vector-stores-chroma==0.5.5',
+  'llama-index==0.13.0',
+  'llama-index-llms-openai==0.5.0',
+  'llama-index-tools-mcp==0.3.0',
+  'llama-index-embeddings-huggingface==0.6.0',
+  'llama-index-vector-stores-chroma==0.5.0',
   'parameterized==0.9.0',
-  'llama-index-llms-mistralai==0.8.2',
+  'llama-index-llms-mistralai==0.7.0',
   'langchain-mistralai>=0.3.0',
   'mistral-haystack==0.0.2',
   'langchain-aws>=0.3.0',
   'azure-storage-blob==12.22.0', # this is for blob exporter
   'boto3==1.42.86', # this is for aws exporter (>=1.42.86 required by bedrock-agentcore 1.6.1)
-  'llama-index-vector-stores-opensearch==0.6.3',
+  'llama-index-vector-stores-opensearch==0.6.0',
   'haystack-ai==2.21.0',
-  'llama-index-llms-azure-openai==0.5.5',
+  'llama-index-llms-azure-openai==0.4.0',
   'requests-aws4auth==1.2.3',
   'opensearch-haystack==1.2.0',
   'langchainhub==0.1.21',
@@ -116,14 +116,14 @@ dev = [
   'anthropic>=0.75.0',
   'anthropic-haystack==4.6.0',
   'pytest-asyncio>=0.26.0',
-  'llama-index-llms-anthropic==0.11.8',
+  'llama-index-llms-anthropic==0.8.1',
   'langchain-anthropic>=0.3.20',
   'langchain-mcp-adapters==0.2.1',
-  'mcp>=1.26.0,<1.27.0',  # Compatible with crewai requirement (~=1.26.0)
+  'mcp==1.27.0',
   'a2a-sdk==0.3.6',
   'httpx==0.28.1',
   'fastapi==0.135.3',
-  'pydantic>=2.11.9,<2.13',  # crewai>=1.15 requires >=2.11.9
+  'pydantic==2.11.7',
   'uvicorn==0.44.0',
   'click==8.2.1',
   'python-dotenv>=1.2.2',
@@ -133,14 +133,14 @@ dev = [
   'huggingface_hub==0.35.3',
   'litellm==1.77.5',
   'google-ai-haystack',
-  'crewai>=1.15.0',  # Updated for Python 3.13 compatibility
+  'crewai==0.95.0',
   'fastmcp==2.14.1',
   'google-adk',
   'openai-agents',
   'azure-identity',
   'agent-framework-azure-ai',
   'bedrock-agentcore==1.6.1',
-  'opentelemetry-semantic-conventions==0.63b1',  # matches opentelemetry-api 1.42 required by crewai>=1.15
+  'opentelemetry-semantic-conventions==0.60b1',
   'opentelemetry-semantic-conventions-ai==0.4.13',
   'agent-framework-core==1.5.0',
 ]
@@ -150,7 +150,7 @@ dev_tranformers = [
 ]
 
 dev_gemini = [
-  'llama-index-llms-gemini==0.6.2'
+  'llama-index-llms-gemini==0.6.0'
 ]
 
 dev_strands = [
