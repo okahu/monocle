@@ -38,8 +38,8 @@ dependencies = [
 log_cli = true
 log_cli_level = "INFO"
 # Enable file logging
-# log_file = "traces.log"
-# log_file_level = "INFO"
+#log_file = "traces.log"
+#log_file_level = "INFO"
 log_format = "%(asctime)s %(levelname)s %(pathname)s:%(lineno)d %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
 
@@ -88,6 +88,7 @@ dev = [
   'faiss-cpu==1.8.0',
   'pytest>=8.0.0',
   'pytest-venv',
+  'beautifulsoup4',  # bs4 is imported directly by test helpers (tests/common); no longer pulled transitively by llama-index 0.14
   'llama-index==0.13.0',
   'llama-index-llms-openai==0.5.0',
   'llama-index-tools-mcp==0.3.0',
