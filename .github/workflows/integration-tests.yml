@@ -102,24 +102,25 @@ jobs:
         #           print(f'::add-mask::{v}')  # mask secret values in logs
         #           env_file.write(f'{k}={v}\n')
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
       - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install build setuptools wheel toml
+          uv pip install --system build setuptools wheel toml
 
       - name: Build wheels
         run: |
           chmod +x ./.github/scripts/build-all.sh
           ./.github/scripts/build-all.sh
 
-      - name: Install package and dev dependencies
+      - name: Install packages and dev dependencies
         run: |
-          pip install --upgrade pip
-          cd apptrace
-          pip install -e '.[dev]'
-          pip install -e '.[azure]'
-          pip install -e '.[aws]'
-          pip install -e '.[gcp]'
+          uv pip install --system --prerelease=allow \
+            -e './apptrace[dev,azure,aws,gcp,postgres]' \
+            -e './test_tools[dev]'
               
       - uses: 'google-github-actions/auth@v3'
         with:
