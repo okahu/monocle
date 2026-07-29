@@ -63,6 +63,8 @@ llm_type_map = {
     "sagemakerllm": "aws_sagemaker",
     "chatbedrock": "aws_bedrock",
     "openaigenerator": "openai",
+    "openaichatgenerator": "openai",
+    "azureopenaichatgenerator": "azure_openai",
     "bedrockruntime": "aws_bedrock",
     "sagemakerruntime": "aws_sagemaker",
     "anthropic": "anthropic",
@@ -259,3 +261,15 @@ PROVIDER_BASE_URLS = {
 
 SPAN_START_TIME:str = "monocle_span_start_time"
 SPAN_END_TIME:str = "monocle_span_end_time"
+
+# HTTP response span piggyback (trace return)
+MONOCLE_TRACE_RETURN_ENABLED_ENV = "MONOCLE_ENABLE_TRACE_RETURN"
+TRACE_RETURN_REQUEST_HEADER = "x-monocle-retrieve-traces"
+TRACE_RETURN_RESPONSE_HEADER = "x-monocle-traces"
+TRACE_RETURN_SCOPE_NAME = "monocle_trace_return"
+TRACE_RETURN_VERSION = "v1"
+
+# Trace-retrieval authorization
+MONOCLE_TRACE_RETRIEVAL_CALLBACK_ENV = "MONOCLE_TRACE_RETRIEVAL_CALLBACK"
+MONOCLE_TRACE_RETRIEVAL_DEFAULT_KEY_ENV = "MONOCLE_TRACE_RETRIEVAL_DEFAULT_KEY"
+MONOCLE_TRACE_RETRIEVAL_KEY_ENV = "MONOCLE_TRACE_RETRIEVAL_KEY"
