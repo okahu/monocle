@@ -163,6 +163,23 @@ if __name__ == "__main__":
 
 Each turn is an ordinary `TestCase`, so per-turn `test_output`, `test_spans`, and evals work exactly as in single-turn tests, validated against that turn's spans. The `session_spans` block (and optional `session_output`) is validated against the spans accumulated across every turn.
 
+**Scoping an assertion to a specific turn.** Every turn runs inside its own turn scope, so each span it produces carries a `scope.turn_id` attribute (alongside the shared `scope.session_id`). The turn id is the turn's own `turn_id` when set, otherwise its 1-based index (`"1"`, `"2"`, ...). Use it in a `session_spans` assertion's `attributes` to require that a span happened in a particular turn:
+
+```python
+"turns": [
+    {"test_input": ["Book me a flight for 26th Nov 2025."], "turn_id": "collect_info"},
+    {"test_input": ["Fly to Mumbai."], "turn_id": "book"}
+],
+"session_spans": [
+    {
+        "span_type": "agentic.tool.invocation",
+        "entities": [{"type": "tool", "name": "adk_book_flight"}],
+        # the flight must have been booked in the "book" turn, not the first
+        "attributes": {"scope.turn_id": "book"}
+    }
+]
+```
+
 **Chaining turn output into the next input.** Use the `{previous_output}` placeholder in a later turn's `test_input` to feed the prior turn's result forward:
 
 ```python
@@ -361,6 +378,34 @@ async def test_strands_agent(test_case: TestCase):
         root_agent, "strands", test_case, session_id="my_session"
     )
 ```
+
+### AWS Bedrock AgentCore
+
+Unlike the other runners, `agentcore` is a *remote* runner: it invokes an agent already deployed to AWS Bedrock AgentCore Runtime via boto3, so no agent framework needs to be installed locally. The agent argument is the deployed agent's Runtime ARN (the endpoint-qualified form is accepted and split automatically):
+
+```python
+ARN = "arn:aws:bedrock-agentcore:us-east-1:<account>:runtime/<agent-id>"
+
+response = monocle_trace_asserter.run_agent(
+    ARN, "agentcore",
+    "Book a flight from San Jose to Seattle for 22 Nov 2026",
+    session_id=f"monocle_test_session_{uuid.uuid4().hex}",
+)
+```
+
+- **Region** is taken from the ARN, so the agent is reached in the region it was deployed to regardless of your local AWS default region.
+- **Payload** sent to the agent is `{"prompt": <message>}`, matching the `BedrockAgentCoreApp` entrypoint contract. Pass a dict to send a different shape verbatim.
+- **Response**: the runner reads the response stream and JSON-decodes it. An agent that returns text (the common case) yields a plain `str`; an agent returning a JSON object yields a `dict`.
+- **`session_id`** is sent as `runtimeSessionId` so the deployed agent keeps conversation context across turns. AWS requires at least 33 characters — Monocle's auto-generated session ids satisfy this, and shorter ids raise a `ValueError` rather than being silently rewritten. Omit it to let AgentCore generate one.
+- **Traces**: spans are produced *inside* the deployed agent and exported by its own Monocle instrumentation, so they are not in the test process. Retrieve them by session — the agent stamps the `runtimeSessionId` onto its spans as `scope.agentic.session`, which Okahu indexes as the `agent_sessions` fact:
+
+```python
+monocle_trace_asserter.with_trace_source(
+    "okahu", id=session_id, fact_name="session", workflow_name="<agent's workflow name>",
+).called_tool("book_flight_tool")
+```
+
+Allow a few seconds for the spans to reach Okahu after the call returns.
 
 ---
 
@@ -747,6 +792,8 @@ monocle_trace_asserter.with_evaluation("okahu") \
     .check_eval("conversation_completeness", expected="complete")
 ```
 
+> **When `fact_name` resolves to multiple facts** (e.g. `agentic_turns` across a multi-turn session), `check_eval` evaluates and asserts **every** fact — it fails if any single fact fails, and the error names each failing fact. To scope an eval to one turn instead, narrow the spans first (e.g. `.where(attribute={"scope.turn_id": "2"})`) so only that turn's fact is evaluated.
+
 #### Okahu `fact_name` values
 
 | `fact_name` | Description |
@@ -892,6 +939,7 @@ A row must declare an `expected` or `not_expected` label — a guard rail alone 
 | `llamaindex` | LlamaIndex |
 | `strands` | Strands Agents |
 | `msagent` | Microsoft Semantic Kernel / AutoGen |
+| `agentcore` | AWS Bedrock AgentCore Runtime 
 
 ---
 
