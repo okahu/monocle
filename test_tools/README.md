@@ -407,6 +407,19 @@ response = monocle_trace_asserter.run_agent(
 - **`session_id`** is sent as `runtimeSessionId` so the deployed agent keeps conversation context across turns. AWS requires at least 33 characters — Monocle's auto-generated session ids satisfy this, and shorter ids raise a `ValueError` rather than being silently rewritten. Omit it to let AgentCore generate one.
 - **Traces**: spans are produced *inside* the deployed agent and exported by its own Monocle instrumentation, so they are not in the test process. Retrieve them by session — the agent stamps the `runtimeSessionId` onto its spans as `scope.agentic.session`, which Okahu indexes as the `agent_sessions` fact:
 
+The runner retrieves them for you, so assertions apply to the remote spans directly:
+
+```python
+# AGENTCORE_TRACE_WORKFLOW=<workflow the deployed agent exports under>
+response = monocle_trace_asserter.run_agent(ARN, "agentcore", prompt, session_id=session_id)
+
+monocle_trace_asserter.called_tool("book_flight_tool")   # asserts on the remote spans
+```
+
+  This needs the workflow name the deployed agent reports under — its own, not the test's — via the `AGENTCORE_TRACE_WORKFLOW` environment variable or the runner's `trace_workflow_name` argument. Without it, retrieval is skipped and only the response is available to assert on. Allow a few seconds for the spans to reach Okahu after the call returns; the runner polls for up to `MONOCLE_REMOTE_TRACE_TIMEOUT` seconds (default 60).
+
+  To load a session explicitly instead — for example one from an earlier run, or when no workflow name is configured — use the trace source directly:
+
 ```python
 monocle_trace_asserter.with_trace_source(
     "okahu", id=session_id, fact_name="session", workflow_name="<agent's workflow name>",
@@ -899,7 +912,7 @@ pytest --monocle-eval-matrix=path/to/matrix.json   # custom path
 MONOCLE_EVAL_MATRIX=1 pytest                        # via env var (default path)
 ```
 
-A row is recorded for every test that calls `check_eval`. At session end the recorder writes `{"generated_at": <UTC ISO8601>, "records": [ ... ]}`, where each record has a fixed schema: `run_id`, `scenario`, `trace_id`, `expected`, `actual`, `status` (`pass`/`fail`/`error`), `explanation`, `total_tokens`, `claim_verdicts`, `hallucination_types`, `entity_match_check`, and (for the filtered flow) `fact_id`, `workflow`, `job_id`. Path precedence: the `--monocle-eval-matrix` value, else `MONOCLE_EVAL_MATRIX`, else the default `test-eval-replay-matrix.json`.
+A row is recorded for every test that calls `check_eval`. At session end the recorder writes `{"generated_at": <UTC ISO8601>, "records": [ ... ]}`, where each record has a fixed, template-agnostic schema: `run_id`, `scenario`, `trace_id`, `expected`, `actual`, `status` (`pass`/`fail`/`error`), `explanation`, `total_tokens`, (for the filtered flow) `fact_id`, `workflow`, `job_id`, and `judge_output` — the judge's structured output verbatim. No judge field is promoted to a top-level column, because every template defines its own `structure_output`: read `claim_verdicts` / `hallucination_types` / `entity_match_check` (hallucination), `addressed_aspects` / `missing_aspects` / `completeness_score` (conversation_completeness), `bias_types` (bias) and so on from `judge_output`. Path precedence: the `--monocle-eval-matrix` value, else `MONOCLE_EVAL_MATRIX`, else the default `test-eval-replay-matrix.json`.
 
 ### CSV eval test cases
 
