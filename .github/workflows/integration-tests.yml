@@ -107,7 +107,7 @@ jobs:
       - name: Install packages and dev dependencies
         run: |
           uv pip install --system --prerelease=allow \
-            -e './apptrace[dev,azure,aws,gcp,postgres,dev_tranformers,dev_gemini,dev_strands]' \
+            -e './apptrace[dev,azure,aws,gcp,postgres]' \
             -e './test_tools[dev]'
               
       - uses: 'google-github-actions/auth@v3'
