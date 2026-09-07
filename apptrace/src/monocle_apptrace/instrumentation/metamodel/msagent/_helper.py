@@ -141,6 +141,12 @@ def get_tool_description(instance: Any) -> str:
         return ""
 
 
+def _fallback_text(value: Any) -> str:
+    """Stringify a value, unless that yields an object repr."""
+    rendered = str(value)
+    return "" if "object at 0x" in rendered else rendered
+
+
 def extract_request_agent_input(arguments: Dict[str, Any]) -> str:
     """
     Extract input from agent request (turn level) arguments.
@@ -153,31 +159,17 @@ def extract_request_agent_input(arguments: Dict[str, Any]) -> str:
         # For request level, we want the user's query/message
         # which is typically the first argument or 'input'/'message' kwarg
         if args and len(args) > 0:
-            input_val = args[0]
-            # Handle string inputs
-            if isinstance(input_val, str):
-                return input_val
-            # Handle message objects
-            elif hasattr(input_val, "content"):
-                return str(input_val.content)
-            else:
-                return str(input_val)
-        
+            return _extract_text_from_content(args[0]) or _fallback_text(args[0])
+
         # Check kwargs for input
-        if "input" in kwargs:
-            return str(kwargs["input"])
-        elif "message" in kwargs:
-            return str(kwargs["message"])
-        elif "query" in kwargs:
-            return str(kwargs["query"])
-        elif "messages" in kwargs:
+        for key in ("input", "message", "query"):
+            if key in kwargs:
+                return _extract_text_from_content(kwargs[key]) or _fallback_text(kwargs[key])
+        if "messages" in kwargs:
             messages = kwargs["messages"]
             if isinstance(messages, list) and len(messages) > 0:
                 # Get the user message (first or last depending on structure)
-                first_msg = messages[0] if messages else ""
-                if hasattr(first_msg, "content"):
-                    return str(first_msg.content)
-                return str(first_msg)
+                return _extract_text_from_content(messages[0]) or _fallback_text(messages[0])
             return str(messages)
         
         return ""
