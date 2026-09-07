@@ -22,7 +22,7 @@ import threading
 
 import pytest
 
-pytest_plugins = ["monocle_test_tools.pytest_plugin"]
+# pytest_plugins = ["monocle_test_tools.pytest_plugin"]
 
 
 def _free_port():
