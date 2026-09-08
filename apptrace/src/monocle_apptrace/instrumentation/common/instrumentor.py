@@ -406,6 +406,12 @@ def setup_monocle_telemetry(
     return get_monocle_instrumentor()
 
 def reset_span_processors(span_processors:list[SpanProcessor]):
+    # Mirror setup_monocle_telemetry: it appends the trace-return processor to
+    # the caller's list before installing it. Without this, any caller that
+    # rebuilds the processor list on an already-initialised instrumentor (e.g.
+    # MonocleValidator.__init__) silently drops trace-return for the rest of the
+    # process, and the feature fails with no error -- just a missing trailer.
+    span_processors = _append_trace_return_processor(span_processors)
     monocle_span_processor = get_monocle_span_processor()
     if monocle_span_processor:
         clear = getattr(monocle_span_processor, "clear_span_processors", None)
