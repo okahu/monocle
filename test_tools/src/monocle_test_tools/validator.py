@@ -255,9 +255,12 @@ class MonocleValidator:
                 raise
             finally:
                 test_failed = validation_failed or (request.session.testsfailed > prior_test_failed_count)
+                # post_test_cleanup owns the scope token and stops it in its
+                # own finally; stopping it again here detaches the same
+                # contextvar Token twice, which raises
+                # "RuntimeError: <Token ...> has already been used once" from
+                # opentelemetry.context.detach and buries the test's real error.
                 self.post_test_cleanup(token, request.node.name, test_failed, validation_error_message)
-                if token is not None:
-                    stop_scope(token)
 
     @staticmethod
     def test_id_generator(val):
@@ -294,9 +297,9 @@ class MonocleValidator:
                 request is not None and request.session.testsfailed > prior_test_failed_count
             )
             test_name = request.node.name if request is not None else test_case_name
+            # See monocle_exporter_wrapper: post_test_cleanup already stops the
+            # scope token; a second stop_scope double-detaches it.
             self.post_test_cleanup(token, test_name, test_failed, validation_error_message)
-            if token is not None:
-                stop_scope(token)
 
     def monocle_testcase(self, test_cases_array: list[Union[TestCase, dict]]):
         test_cases: list[TestCase] = []
