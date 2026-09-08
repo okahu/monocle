@@ -22,7 +22,11 @@ import time
 
 import pytest
 
-# pytest_plugins = ["monocle_test_tools.pytest_plugin"]
+# NOTE: the monocle_test_tools pytest plugin is registered by
+# tests/integration/conftest.py (guarded so it is only loaded when the package
+# is not installed via its pytest11 entry point). Declaring `pytest_plugins`
+# here as well double-registers it and fails collection with
+# "Plugin already registered under a different name".
 
 
 def _free_port():

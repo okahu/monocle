@@ -77,8 +77,9 @@ async def test_crewai_travel_agent(my_test_case: TestCase):
     # Extract the travel request from test input
     travel_request = my_test_case.test_input[0]
     
-    # Execute the CrewAI travel request
-    result = await execute_crewai_travel_request(travel_request)
+    # execute_crewai_travel_request is sync (it calls crew.kickoff, not
+    # kickoff_async) -- awaiting its str result raises TypeError.
+    result = execute_crewai_travel_request(travel_request)
     
     # Return the result for validation
     await sleep(2)  # To avoid rate limiting

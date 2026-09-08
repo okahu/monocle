@@ -1,13 +1,35 @@
 import asyncio
+import functools
+import inspect
 from typing import Any, Union
 import logging
 logger = logging.getLogger(__name__)
 from monocle_test_tools.runner.agent_runner import AgentRunner
 from llama_index.core.memory.chat_memory_buffer import ChatMemoryBuffer
 
+
+def _memory_kwargs(target, memory):
+    """`memory=...` kwargs for `target`, or `{}` if it can't/shouldn't take it.
+
+    Test wrapper functions such as ``run_query_engine_async(user_msg)`` accept
+    only the message, so passing ``memory`` unconditionally raises
+    ``TypeError: ... got an unexpected keyword argument 'memory'``.
+    """
+    if memory is None:
+        return {}
+    try:
+        signature = inspect.signature(target)
+    except (TypeError, ValueError):
+        return {"memory": memory}
+    parameters = signature.parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters):
+        return {"memory": memory}
+    return {"memory": memory} if "memory" in signature.parameters else {}
+
+
 class LlamaIndexRunner(AgentRunner):
     """Runner for LlamaIndex agents."""
-    
+
     async def run_agent_async(self, root_agent, test_message: Union[str, Any],session_id: str = None):
         """
         Run a LlamaIndex agent asynchronously.
@@ -32,7 +54,7 @@ class LlamaIndexRunner(AgentRunner):
             # Check if root_agent is a callable function (wrapper function)
             if callable(root_agent) and not hasattr(root_agent, 'achat') and not hasattr(root_agent, 'run'):
                 # It's a wrapper function, call it directly with the message
-                result = root_agent(test_message,memory=memory)
+                result = root_agent(test_message, **_memory_kwargs(root_agent, memory))
                 # If it returns a coroutine, await it
                 if asyncio.iscoroutine(result):
                     return await result
@@ -44,7 +66,9 @@ class LlamaIndexRunner(AgentRunner):
             # LlamaIndex agents typically have an async chat or run method
             if agent_type == 'AgentWorkflow' and hasattr(root_agent, 'run'):
                 # AgentWorkflow.run() is awaitable and uses user_msg parameter
-                response = await root_agent.run(user_msg=test_message,memory=memory)
+                response = await root_agent.run(
+                    user_msg=test_message, **_memory_kwargs(root_agent.run, memory)
+                )
                 
             elif hasattr(root_agent, 'achat'):
                 response = await root_agent.achat(test_message)
@@ -54,18 +78,28 @@ class LlamaIndexRunner(AgentRunner):
                 response = await root_agent.aquery(test_message)
             elif hasattr(root_agent, 'run'):
                 # If no async method, run sync method in executor
+                # run_in_executor takes no kwargs -- bind them with partial.
                 response = await asyncio.get_event_loop().run_in_executor(
-                    None, root_agent.run, test_message, memory=memory
+                    None,
+                    functools.partial(
+                        root_agent.run, test_message, **_memory_kwargs(root_agent.run, memory)
+                    ),
                 )
             elif hasattr(root_agent, 'chat'):
                 # For chat-based agents
                 response = await asyncio.get_event_loop().run_in_executor(
-                    None, root_agent.chat, test_message, memory=memory
+                    None,
+                    functools.partial(
+                        root_agent.chat, test_message, **_memory_kwargs(root_agent.chat, memory)
+                    ),
                 )
             elif hasattr(root_agent, 'query'):
                 # For query engines
                 response = await asyncio.get_event_loop().run_in_executor(
-                    None, root_agent.query, test_message, memory=memory
+                    None,
+                    functools.partial(
+                        root_agent.query, test_message, **_memory_kwargs(root_agent.query, memory)
+                    ),
                 )
             else:
                 raise AttributeError(
