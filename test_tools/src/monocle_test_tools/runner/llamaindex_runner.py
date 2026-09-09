@@ -9,11 +9,9 @@ from llama_index.core.memory.chat_memory_buffer import ChatMemoryBuffer
 
 
 def _memory_kwargs(target, memory):
-    """`memory=...` kwargs for `target`, or `{}` if it can't/shouldn't take it.
+    """`memory=` kwargs for `target`, or `{}` when it doesn't accept them.
 
-    Test wrapper functions such as ``run_query_engine_async(user_msg)`` accept
-    only the message, so passing ``memory`` unconditionally raises
-    ``TypeError: ... got an unexpected keyword argument 'memory'``.
+    Wrappers like ``run_query_engine_async(user_msg)`` take only the message.
     """
     if memory is None:
         return {}

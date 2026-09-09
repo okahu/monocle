@@ -71,8 +71,7 @@ async def execute_simple_hotel_booking(request: str):
 @MonocleValidator().monocle_testcase(agent_test_cases)
 async def test_crewai_simple_hotel_agent(my_test_case: TestCase):
     """Test simple CrewAI hotel booking agent."""
-    # Extract the hotel request from the *current* parametrized case, not from
-    # the module-level list (which is a list and has no .test_input).
+    # The current parametrized case, not the module-level list.
     hotel_request = my_test_case.test_input[0]
     
     # Execute the simple hotel booking

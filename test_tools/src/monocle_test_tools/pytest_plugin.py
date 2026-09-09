@@ -156,20 +156,15 @@ def pytest_runtest_makereport(item, call):
 def _apply_xfail_to_deferred_failure(item, rep) -> None:
     """Honour @pytest.mark.xfail for assertions that were recorded, not raised.
 
-    Fluent assertions do not raise -- they record into ``_assertion_errors`` and
-    the outcome is flipped to "failed" above. By then pytest's own xfail
-    hookwrapper (_pytest/skipping.py) has already run and saw a *passing* call,
-    so it left the marker unapplied and the test reports as a hard FAILED.
-    Re-apply it here so a recorded failure xfails exactly like a raised one.
+    Fluent assertions record instead of raising, so pytest's own xfail
+    hookwrapper already saw a passing call and left the marker unapplied.
     """
     if item.config.getoption("runxfail", False):
         return
     marker = item.get_closest_marker("xfail")
     if marker is None:
         return
-    # xfail(condition, reason=...) -- a falsy literal condition disables it.
-    # String conditions are pytest-evaluated expressions; leave those to pytest
-    # rather than re-implementing eval here.
+    # A falsy literal condition disables it; leave string conditions to pytest.
     condition = marker.args[0] if marker.args else marker.kwargs.get("condition", True)
     if not isinstance(condition, str) and not condition:
         return

@@ -52,9 +52,8 @@ async def test_does_not_call_agent_passes(monocle_trace_asserter):
 @pytest.mark.asyncio
 async def test_has_input_passes(monocle_trace_asserter):
     """has_input - passes when input matches."""
-    # NOTE: tool input is serialized JSON whose key order varies per run
-    # (the LLM chooses arg order), so the exact-match has_*/does_not_have_*
-    # forms cannot be used here -- use the substring forms.
+    # Tool input is serialized JSON with per-run key order, so the exact-match
+    # has_*/does_not_have_* forms cannot be used here.
     await monocle_trace_asserter.run_agent_async(root_agent, "google_adk",
                         "Book a flight from Miami to Orlando for May 1st 2026")
     monocle_trace_asserter.called_tool("adk_book_flight_5").contains_input("Orlando")

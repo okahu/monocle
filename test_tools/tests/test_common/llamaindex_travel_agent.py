@@ -132,9 +132,8 @@ async def run_agent(user_msg: str = None):
 def _agent_text(response) -> str:
     """Text of a workflow-agent result.
 
-    `await agent.run(...)` yields an AgentOutput whose `.response` is a
-    ChatMessage -- str() on that includes the "assistant: " role prefix, which
-    breaks the similarity comparer. str(AgentOutput) is the bare text.
+    AgentOutput.response is a ChatMessage; str() on it adds an "assistant: "
+    prefix that breaks the similarity comparer.
     """
     content = getattr(getattr(response, "response", None), "content", None)
     if content is not None:

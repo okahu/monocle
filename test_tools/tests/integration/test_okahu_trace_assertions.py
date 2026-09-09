@@ -5,9 +5,7 @@ import requests
 from monocle_test_tools import TraceAssertion
 from monocle_test_tools.okahu_span_loader import OkahuSpanLoader
 
-# Update these constants with real values from your Okahu environment to run the
-# tests, or point them at your own tenant's data via OKAHU_DEMO_WORKFLOW_NAME /
-# OKAHU_DEMO_TRACE_ID.
+# Point at your own tenant's data via OKAHU_DEMO_WORKFLOW_NAME / OKAHU_DEMO_TRACE_ID.
 DEMO_WORKFLOW_NAME = os.getenv("OKAHU_DEMO_WORKFLOW_NAME", "Okahu-Loader-Demo")
 PLACEHOLDER_TRACE_ID = os.getenv("OKAHU_DEMO_TRACE_ID", "642dbd9d0dfcfdbdc8849f67f34c8a19")
 
@@ -15,10 +13,7 @@ PLACEHOLDER_TRACE_ID = os.getenv("OKAHU_DEMO_TRACE_ID", "642dbd9d0dfcfdbdc8849f6
 def _load_demo_spans(asserter: TraceAssertion):
     """Load the demo trace, skipping if this tenant does not have it.
 
-    These assertions are pinned to one specific workflow + trace id. When the
-    configured tenant has no such trace (a fresh/rotated environment, or the
-    stock placeholder values above), the loader raises 404 -- which is a missing
-    fixture, not a product defect, so skip rather than fail.
+    A missing trace is an absent fixture, not a product defect.
     """
     try:
         spans = OkahuSpanLoader.get_spans(DEMO_WORKFLOW_NAME, PLACEHOLDER_TRACE_ID)
