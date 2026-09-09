@@ -74,9 +74,14 @@ jobs:
       MONOCLE_GCS_PROJECT_ID: ${{ vars.MONOCLE_GCS_PROJECT_ID }}
       GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
       OKAHU_API_KEY: ${{ secrets.STAGE_OKAHU_API_KEY }}
-      OKAHU_INGESTION_ENDPOINT: ${{ vars.STAGE_OKAHU_INGESTION_ENDPOINT }}
-      OKAHU_API_ENDPOINT: ${{ vars.STAGE_OKAHU_API_ENDPOINT }}
-      OKAHU_EVALUATION_ENDPOINT: ${{ vars.STAGE_OKAHU_EVALUATION_ENDPOINT }}
+      OKAHU_INGESTION_ENDPOINT: ${{ vars.STAGE_OKAHU_INGESTION_ENDPOINT || 'https://ingest-stage.okahu.co/api/v1/trace/ingest' }}
+      OKAHU_API_ENDPOINT: ${{ vars.STAGE_OKAHU_API_ENDPOINT || 'https://api-stage.okahu.co' }}
+      OKAHU_EVALUATION_ENDPOINT: ${{ vars.STAGE_OKAHU_EVALUATION_ENDPOINT || 'https://evals-stage.okahu.co/api' }}
+      # Eval tests need traces in Okahu; the validator defaults to 'file'.
+      MONOCLE_EXPORTER: ${{ vars.MONOCLE_EXPORTER || 'okahu' }}
+      # Fact-based evals (agent_requests etc.) only resolve in a workflow Okahu
+      # has discovered those facts for.
+      MONOCLE_TEST_WORKFLOW_NAME: ${{ vars.MONOCLE_TEST_WORKFLOW_NAME || 'okahu_demos_microsoft_travel_agent_tests' }}
       FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
       AZURE_OPENAI_MODEL_DEPLOYMENT_NAME: ${{ vars.AZURE_OPENAI_MODEL_DEPLOYMENT_NAME }}
       MONOCLE_OKAHU_TEST_WORKFLOW: ${{ vars.MONOCLE_OKAHU_TEST_WORKFLOW }}
