@@ -26,6 +26,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       AWS_ACCESS_KEY_BOTO: ${{ secrets.AWS_ACCESS_KEY_BOTO }}
       AWS_ACCESS_KEY_ID_EXPORTER: ${{ secrets.AWS_ACCESS_KEY_ID_EXPORTER }}
@@ -76,11 +77,19 @@ jobs:
       OKAHU_API_KEY: ${{ secrets.STAGE_OKAHU_API_KEY }}
       OKAHU_INGESTION_ENDPOINT: ${{ vars.STAGE_OKAHU_INGESTION_ENDPOINT }}
       OKAHU_API_ENDPOINT: ${{ vars.STAGE_OKAHU_API_ENDPOINT }}
+      OKAHU_EVALUATION_ENDPOINT: ${{ vars.STAGE_OKAHU_EVALUATION_ENDPOINT }}
+      # Eval tests need traces in Okahu; the validator defaults to 'file'.
+      MONOCLE_EXPORTER: ${{ vars.MONOCLE_EXPORTER }}
+      # Fact-based evals (agent_requests etc.) only resolve in a workflow Okahu
+      # has discovered those facts for.
+      MONOCLE_TEST_WORKFLOW_NAME: ${{ vars.MONOCLE_TEST_WORKFLOW_NAME }}
       FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
       AZURE_OPENAI_MODEL_DEPLOYMENT_NAME: ${{ vars.AZURE_OPENAI_MODEL_DEPLOYMENT_NAME }}
       MONOCLE_OKAHU_TEST_WORKFLOW: ${{ vars.MONOCLE_OKAHU_TEST_WORKFLOW }}
       MONOCLE_OKAHU_TEST_APP: ${{ vars.MONOCLE_OKAHU_TEST_APP }}
-      
+      AGENTCORE_RUNTIME_URL: ${{ vars.AGENTCORE_RUNTIME_URL }}
+      AGENTCORE_TRACE_WORKFLOW: ${{ vars.AGENTCORE_TRACE_WORKFLOW }}
+            
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -111,78 +120,84 @@ jobs:
       - name: Install packages and dev dependencies
         run: |
           uv pip install --system --prerelease=allow \
-            -e './apptrace[dev,azure,aws,gcp,postgres]' \
-            -e './test_tools[dev]'
+            -e './apptrace[dev,azure,aws,gcp,postgres]'
               
       - uses: 'google-github-actions/auth@v3'
         with:
           service_account: 'okahu-github-action-sa@fluent-radar-408119.iam.gserviceaccount.com'
           workload_identity_provider: 'projects/564509919381/locations/global/workloadIdentityPools/github-pool/providers/github'
 
-      # - name: Run Apptrace Integration tests
-      #   if: always()
-      #   id: run-apptrace-integration-tests
-      #   run: |
-      #     cd apptrace
-      #     export PYTHONPATH=./src:./tests
-      #     set -e
-      #     pytest -rfs tests/integration/ --ignore-glob='**/*otlp*.py' --tb=short | tee apptrace_integration_test_result.log
-      #     EXIT_CODE=${PIPESTATUS[0]}
-      #     grep -E 'FAILED.*::' apptrace_integration_test_result.log | cut -d ':' -f 1 | sort | uniq >> apptrace_integration_test_failed_files.txt
-      #     echo "Failed Integration test files:"
-      #     echo "" >> failed_files.txt
-      #     echo "Failed Integration test files:" >> failed_files.txt
-      #     cat ./apptrace_integration_test_failed_files.txt
-      #     cat ./apptrace_integration_test_failed_files.txt >> failed_files.txt
-      #     echo "" >> failed_files.txt
-      #     LINE_NUM=$(grep -nE "= .*((failed|passed|skipped|warnings).*)+ in .* =" apptrace_integration_test_result.log | tail -1 | cut -d: -f1)
-      #     tail -n +$LINE_NUM ./apptrace_integration_test_result.log >> integration_test_summary.txt
-      #     echo "" >> integration_test_summary.txt
-      #     echo "" >> test_summary.txt
-      #     echo "Apptrace Integration Test Summary:" >> test_summary.txt
-      #     cat ./integration_test_summary.txt >> test_summary.txt
-      #     echo "" >> integration_test_summary.txt
-      #     exit $EXIT_CODE
+      - name: Run Apptrace Integration tests
+        if: always()
+        id: run-apptrace-integration-tests
+        run: |
+          cd apptrace
+          export PYTHONPATH=./src:./tests
+          set -e
+          pytest -rfs tests/integration/ --ignore-glob='**/*otlp*.py' --tb=short | tee apptrace_integration_test_result.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          grep -E 'FAILED.*::' apptrace_integration_test_result.log | cut -d ':' -f 1 | sort | uniq >> apptrace_integration_test_failed_files.txt
+          echo "Failed Integration test files:"
+          echo "" >> failed_files.txt
+          echo "Failed Integration test files:" >> failed_files.txt
+          cat ./apptrace_integration_test_failed_files.txt
+          cat ./apptrace_integration_test_failed_files.txt >> failed_files.txt
+          echo "" >> failed_files.txt
+          LINE_NUM=$(grep -nE "= .*((failed|passed|skipped|warnings).*)+ in .* =" apptrace_integration_test_result.log | tail -1 | cut -d: -f1)
+          tail -n +$LINE_NUM ./apptrace_integration_test_result.log >> integration_test_summary.txt
+          echo "" >> integration_test_summary.txt
+          echo "" >> test_summary.txt
+          echo "Apptrace Integration Test Summary:" >> test_summary.txt
+          cat ./integration_test_summary.txt >> test_summary.txt
+          echo "" >> integration_test_summary.txt
+          exit $EXIT_CODE
 
-      # - name: Add Test Summary to Summary (Table)
-      #   if: always()
-      #   run: |
-      #     cd apptrace
-      #     if [[ -s ./integration_test_summary.txt ]]; then
-      #       {
-      #         echo "### Apptrace Integration Test Summary"
-      #         echo ""
-      #         echo "| Apptrace Integration Test Summary |"
-      #         echo "|------------------------------------|"
-      #         while read -r file; do
-      #           echo "| $file |"
-      #         done < integration_test_summary.txt
-      #       } >> $GITHUB_STEP_SUMMARY
-      #     fi
+      - name: Add Test Summary to Summary (Table)
+        if: always()
+        run: |
+          cd apptrace
+          if [[ -s ./integration_test_summary.txt ]]; then
+            {
+              echo "### Apptrace Integration Test Summary"
+              echo ""
+              echo "| Apptrace Integration Test Summary |"
+              echo "|------------------------------------|"
+              while read -r file; do
+                echo "| $file |"
+              done < integration_test_summary.txt
+            } >> $GITHUB_STEP_SUMMARY
+          fi
           
-      # - name: Add Failed Files to Summary (Table)
-      #   if: always()
-      #   run: |
-      #     cd apptrace
-      #     if [[ "${APPTRACE_INTEGRATION_EXIT}" == "0" ]]; then
-      #       echo "### ✅ All Apptrace Integration tests passed!" >> $GITHUB_STEP_SUMMARY
-      #     elif [[ -s ./apptrace_integration_test_failed_files.txt ]]; then
-      #       {
-      #         echo "### ❌ Apptrace Integration Failed Test Files"
-      #         echo ""
-      #         echo "| Apptrace Integration Test Failed File Path |"
-      #         echo "|---------------------------------------------|"
-      #         while read -r file; do
-      #           echo "| $file |"
-      #         done < apptrace_integration_test_failed_files.txt
-      #       } >> $GITHUB_STEP_SUMMARY
-      #     else
-      #       {
-      #         echo "### ❌ Apptrace Integration tests FAILED (pytest exit code ${APPTRACE_INTEGRATION_EXIT})"
-      #         echo ""
-      #         echo "No failed test files were captured — pytest did not run to completion (e.g. a collection/import error from a missing dependency). Check the \"Run Apptrace Integration tests\" step logs."
-      #       } >> $GITHUB_STEP_SUMMARY
-      #     fi
+      - name: Add Failed Files to Summary (Table)
+        if: always()
+        run: |
+          cd apptrace
+          if [[ "${APPTRACE_INTEGRATION_EXIT}" == "0" ]]; then
+            echo "### ✅ All Apptrace Integration tests passed!" >> $GITHUB_STEP_SUMMARY
+          elif [[ -s ./apptrace_integration_test_failed_files.txt ]]; then
+            {
+              echo "### ❌ Apptrace Integration Failed Test Files"
+              echo ""
+              echo "| Apptrace Integration Test Failed File Path |"
+              echo "|---------------------------------------------|"
+              while read -r file; do
+                echo "| $file |"
+              done < apptrace_integration_test_failed_files.txt
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            {
+              echo "### ❌ Apptrace Integration tests FAILED (pytest exit code ${APPTRACE_INTEGRATION_EXIT})"
+              echo ""
+              echo "No failed test files were captured — pytest did not run to completion (e.g. a collection/import error from a missing dependency). Check the \"Run Apptrace Integration tests\" step logs."
+            } >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Install test-tools packages and dev dependencies
+        if: always()
+        run: |
+          uv pip install --system --prerelease=allow \
+            -e './apptrace[dev,azure,aws,gcp,postgres]'
+            -e './test_tools[dev]'
 
       - name: Run test_tools Integration tests
         if: always()

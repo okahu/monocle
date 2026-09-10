@@ -101,7 +101,6 @@ def test_haystack_anthropic_finish_reason(setup):
     generator  = AnthropicChatGenerator(model=ANTHROPIC_MODEL,
                                        generation_kwargs={
                                            "max_tokens": 50,
-                                           "temperature": 0.0,
                                        }
     )
     messages = [ChatMessage.from_system("You are a helpful, respectful and honest assistant"),
@@ -138,7 +137,6 @@ def test_haystack_anthropic_finish_reason_max_tokens(setup):
     generator  = AnthropicChatGenerator(model=ANTHROPIC_MODEL,
                                        generation_kwargs={
                                            "max_tokens": 1,
-                                           "temperature": 0.0,
                                        }
     )
     messages = [ChatMessage.from_system("You are a helpful, respectful and honest assistant"),
@@ -180,7 +178,6 @@ def test_haystack_anthropic_generator_finish_reason_max_tokens(setup):
     generator  = AnthropicGenerator(model=ANTHROPIC_MODEL,
                                        generation_kwargs={
                                            "max_tokens": 1,
-                                           "temperature": 0.0,
                                        }
     )
     response = generator.run("Write a detailed explanation of quantum computing.")
@@ -451,8 +448,7 @@ def test_haystack_anthropic_finish_reason_tool_use_with_entity_3_validation(setu
     generator = AnthropicChatGenerator(
         model=ANTHROPIC_MODEL,
         generation_kwargs={
-            "max_tokens": 100,
-            "temperature": 0.0
+            "max_tokens": 100
         }
     )
 
@@ -669,7 +665,7 @@ def test_haystack_anthropic_subtype_tool_call(setup):
 
     generator = AnthropicChatGenerator(
         model=ANTHROPIC_MODEL,
-        generation_kwargs={'max_tokens': 100, 'temperature': 0.0}
+        generation_kwargs={'max_tokens': 100}
     )
     messages = [
         ChatMessage.from_system("You are a helpful assistant with weather tools."),
@@ -715,7 +711,7 @@ def test_haystack_anthropic_subtype_turn_end(setup):
 
     generator = AnthropicChatGenerator(
         model=ANTHROPIC_MODEL,
-        generation_kwargs={'max_tokens': 20, 'temperature': 0.0}
+        generation_kwargs={'max_tokens': 20}
     )
     messages = [ChatMessage.from_user("Say hello in one word.")]
     generator.run(messages=messages)

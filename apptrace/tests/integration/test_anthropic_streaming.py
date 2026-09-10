@@ -40,6 +40,12 @@ def setup():
             instrumentor.uninstrument()
 
 
+# run something before each test
+# @pytest.fixture(autouse=True)
+# def pre_test(setup):
+#     """Clear the exporter so each test only sees its own spans."""
+#     setup.reset()
+
 def test_anthropic_streaming_sample(setup):
     """Test Anthropic streaming API with monocle instrumentation."""
     client = anthropic.Anthropic()
@@ -51,7 +57,6 @@ def test_anthropic_streaming_sample(setup):
     stream = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=512,
-        temperature=0.7,
         system="You are a helpful assistant to answer questions about coffee.",
         messages=[
             {"role": "user", "content": "What is a cappuccino?"}
