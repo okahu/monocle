@@ -195,6 +195,7 @@ jobs:
       - name: Install test-tools packages and dev dependencies
         run: |
           uv pip install --system --prerelease=allow \
+            -e './apptrace[dev,azure,aws,gcp,postgres]'
             -e './test_tools[dev]'
 
       - name: Run test_tools Integration tests
