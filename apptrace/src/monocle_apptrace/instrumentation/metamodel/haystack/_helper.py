@@ -233,6 +233,15 @@ def _get_first_tool_call(response, instance):
 
     with suppress(AttributeError, IndexError, TypeError):
         if isinstance(response, dict) and 'replies' in response and response['replies']:
+            # Preferred path: Haystack normalises every provider's tool call
+            # into ChatMessage.tool_calls as ToolCall objects (.tool_name,
+            # .arguments, .id). Anthropic arrives this way, so check it before
+            # falling back to raw provider payloads below.
+            for reply in response['replies']:
+                tool_calls = getattr(reply, 'tool_calls', None)
+                if tool_calls:
+                    return tool_calls[0]
+
             for reply in response['replies']:
                 if hasattr(reply, 'content') and reply.content:
                     content_data = json.loads(reply.content)
@@ -259,8 +268,13 @@ def extract_tool_name(arguments):
             return None
 
         for getter in [
+            # Haystack ToolCall object
+            lambda tc: tc.tool_name,
+            # raw Anthropic tool_use / OpenAI-style dicts
             lambda tc: tc["name"],
-            lambda tc: tc["function"]["name"]
+            lambda tc: tc["function"]["name"],
+            # tool definitions carrying the name as an attribute
+            lambda tc: tc.name,
         ]:
             try:
                 return getter(tool_call)

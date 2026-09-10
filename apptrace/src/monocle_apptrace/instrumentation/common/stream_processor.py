@@ -2,6 +2,7 @@
 Base streaming processor using Template Method pattern for generic framework support.
 """
 
+import inspect
 import logging
 import time
 import types as _builtin_types
@@ -50,6 +51,9 @@ class StreamState:
     tools: List[Dict[str, Any]] = field(default_factory=list)
     refusal: Optional[str] = None
     reasoning_content: str = ""
+    # A stream ends either by exhaustion or by the consumer closing it early;
+    # both paths must yield exactly one span.
+    span_emitted: bool = False
     
     def update_first_token_time(self) -> None:
         """Update first token timestamp if still waiting for first token."""
@@ -127,6 +131,11 @@ class BaseStreamProcessor(ABC):
                     wrapper = async_wrapper
             elif hasattr(response, "__anext__"):
                 self._wrap_async_next(response, state, stream_start_time, span_processor)
+
+            if wrapper is None:
+                # Patched in place, so a consumer's explicit close() is observable
+                # and must close out the span too.
+                self._wrap_close(response, state, stream_start_time, span_processor)
 
         return wrapper
     
@@ -279,6 +288,42 @@ class BaseStreamProcessor(ABC):
     # INTERNAL IMPLEMENTATION - Do not override these methods
     # =============================================================================
     
+    def _emit_span_once(self, state: StreamState, stream_start_time: int,
+                        span_processor: Optional[Callable]) -> None:
+        """Hand the span to ``span_processor`` at most once for this stream."""
+        if span_processor is None or state.span_emitted:
+            return
+        state.span_emitted = True
+        span_processor(self.create_span_result(state, stream_start_time))
+
+    def _wrap_close(self, response: Any, state: StreamState,
+                    stream_start_time: int, span_processor: Optional[Callable]) -> None:
+        """Emit the span when a consumer closes the stream instead of draining it.
+
+        An interrupted stream is still a real inference that spent tokens and
+        wall-clock time, so it has to be traced. An explicit close()/aclose() is
+        the deterministic signal: Python defers closing an abandoned generator
+        to the garbage collector.
+        """
+        for name in ("close", "aclose"):
+            original = getattr(response, name, None)
+            if not callable(original):
+                continue
+            if inspect.iscoroutinefunction(original):
+                async def new_aclose(self_stream, _original=original):
+                    try:
+                        return await _original()
+                    finally:
+                        self._emit_span_once(state, stream_start_time, span_processor)
+                patch_instance_method(response, name, new_aclose)
+            else:
+                def new_close(self_stream, _original=original):
+                    try:
+                        return _original()
+                    finally:
+                        self._emit_span_once(state, stream_start_time, span_processor)
+                patch_instance_method(response, name, new_close)
+
     def _wrap_sync_iterator(self, response: Any, state: StreamState,
                            stream_start_time: int, span_processor: Optional[Callable]) -> Optional[Any]:
         """Wrap synchronous iterator.
@@ -297,8 +342,7 @@ class BaseStreamProcessor(ABC):
                     yield item
                 except StopIteration:
                     if span_processor:
-                        ret_val = self.create_span_result(state, stream_start_time)
-                        span_processor(ret_val)
+                        self._emit_span_once(state, stream_start_time, span_processor)
                     break
 
         if not patch_instance_method(response, "__iter__", new_iter):
@@ -324,8 +368,7 @@ class BaseStreamProcessor(ABC):
                     yield item
                 except StopAsyncIteration:
                     if span_processor:
-                        ret_val = self.create_span_result(state, stream_start_time)
-                        span_processor(ret_val)
+                        self._emit_span_once(state, stream_start_time, span_processor)
                     break
 
         if not patch_instance_method(response, "__aiter__", new_aiter):
@@ -345,8 +388,7 @@ class BaseStreamProcessor(ABC):
                 return item
             except StopIteration:
                 if span_processor:
-                    ret_val = self.create_span_result(state, stream_start_time)
-                    span_processor(ret_val)
+                    self._emit_span_once(state, stream_start_time, span_processor)
                 raise
 
         patch_instance_method(response, "__next__", new_next)
@@ -363,8 +405,7 @@ class BaseStreamProcessor(ABC):
                 return item
             except StopAsyncIteration:
                 if span_processor:
-                    ret_val = self.create_span_result(state, stream_start_time)
-                    span_processor(ret_val)
+                    self._emit_span_once(state, stream_start_time, span_processor)
                 raise
 
         patch_instance_method(response, "__anext__", new_anext)
