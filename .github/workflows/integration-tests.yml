@@ -120,8 +120,7 @@ jobs:
       - name: Install packages and dev dependencies
         run: |
           uv pip install --system --prerelease=allow \
-            -e './apptrace[dev,azure,aws,gcp,postgres]' \
-            -e './test_tools[dev]'
+            -e './apptrace[dev,azure,aws,gcp,postgres]'
               
       - uses: 'google-github-actions/auth@v3'
         with:
@@ -192,6 +191,11 @@ jobs:
               echo "No failed test files were captured — pytest did not run to completion (e.g. a collection/import error from a missing dependency). Check the \"Run Apptrace Integration tests\" step logs."
             } >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Install test-tools packages and dev dependencies
+        run: |
+          uv pip install --system --prerelease=allow \
+            -e './test_tools[dev]'
 
       - name: Run test_tools Integration tests
         if: always()
