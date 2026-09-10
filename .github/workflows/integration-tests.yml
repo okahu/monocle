@@ -193,6 +193,7 @@ jobs:
           fi
 
       - name: Install test-tools packages and dev dependencies
+        if: always()
         run: |
           uv pip install --system --prerelease=allow \
             -e './apptrace[dev,azure,aws,gcp,postgres]'
