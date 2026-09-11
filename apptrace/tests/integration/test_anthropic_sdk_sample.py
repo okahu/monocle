@@ -40,7 +40,6 @@ def setup():
         if instrumentor and instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.uninstrument()
 
-# run something before each test
 @pytest.fixture(autouse=True)
 def pre_test(setup):
     """Clear the exporter so each test only sees its own spans."""
