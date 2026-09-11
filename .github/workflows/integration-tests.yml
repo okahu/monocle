@@ -196,7 +196,7 @@ jobs:
         if: always()
         run: |
           uv pip install --system --prerelease=allow \
-            -e './apptrace[dev,azure,aws,gcp,postgres]'
+            -e './apptrace[dev,azure,aws,gcp,postgres]' \
             -e './test_tools[dev]'
 
       - name: Run test_tools Integration tests
