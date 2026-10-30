@@ -19,8 +19,14 @@ class TestHandler(unittest.TestCase):
             side_effect=lambda key: os.environ.get(key),
         )
         self._env_value_patcher.start()
+        self._env_value_source_patcher = patch(
+            "monocle_apptrace.exporters.okahu.okahu_exporter.get_monocle_env_value_with_source",
+            side_effect=lambda key: (os.environ.get(key), "environment" if os.environ.get(key) else None),
+        )
+        self._env_value_source_patcher.start()
 
     def tearDown(self):
+        self._env_value_source_patcher.stop()
         self._env_value_patcher.stop()
         self._env_patcher.stop()
 

@@ -4,7 +4,7 @@ import logging, json
 import os
 import threading
 import traceback
-from typing import Callable, Generic, Optional, TypeVar, Mapping, Union
+from typing import Callable, Generic, Optional, Tuple, TypeVar, Mapping, Union
 
 from opentelemetry.context import attach, detach, get_current, get_value, set_value, Context
 from opentelemetry.trace import NonRecordingSpan, Span
@@ -828,9 +828,15 @@ def get_span_id(span: Span) -> str:
 def get_monocle_env_value(key: str) -> Optional[str]:
     """Look up a Monocle config value from the environment or .env files.
     """
+    return get_monocle_env_value_with_source(key)[0]
+
+def get_monocle_env_value_with_source(key: str) -> Tuple[Optional[str], Optional[str]]:
+    """Like get_monocle_env_value, but also return where the value came from:
+    "environment" or the path of the env file it was read from (None if not found).
+    """
     env_value = os.environ.get(key)
     if env_value:
-        return env_value
+        return env_value, "environment"
     candidates = (
         os.path.join(os.getcwd(), ".env.monocle"),
         os.path.join(os.path.expanduser("~"), ".monocle", ".env"),
@@ -850,7 +856,7 @@ def get_monocle_env_value(key: str) -> Optional[str]:
                     if value.startswith(('"', "'")):
                         value = value[1:-1].strip()
                     if value:
-                        return value
+                        return value, env_file_path
         except OSError:
             continue
-    return None
+    return None, None

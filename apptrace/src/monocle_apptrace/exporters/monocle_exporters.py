@@ -39,6 +39,12 @@ def get_monocle_exporter_names(exporters_list: str = None) -> List[str]:
 
 def get_monocle_exporter(exporters_list:str=None) -> List[SpanExporter]:
     exporter_names = get_monocle_exporter_names(exporters_list)
+    if exporters_list:
+        logger.info("Monocle exporters: %s", ", ".join(exporter_names))
+    elif _get_monocle_exporter():
+        logger.info("Monocle exporters: %s (from MONOCLE_EXPORTER)", ", ".join(exporter_names))
+    else:
+        logger.info("Monocle exporters: %s (MONOCLE_EXPORTER not set, using the default)", ", ".join(exporter_names))
     exporters = []
     
     # Create task processor for AWS Lambda environment
