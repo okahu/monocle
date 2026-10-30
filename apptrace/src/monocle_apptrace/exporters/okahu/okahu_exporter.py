@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Tuple
 import requests
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult, ConsoleSpanExporter
@@ -14,6 +14,11 @@ REQUESTS_AUTH_FAILURE_STATUS_CODES = (401, 403)
 OKAHU_PROD_INGEST_ENDPOINT = "https://ingest.okahu.co/api/v1/trace/ingest"
 
 logger = logging.getLogger(__name__)
+
+
+def _get_okahu_api_key() -> Tuple[Optional[str], Optional[str]]:
+    """Return the Okahu API key and where it came from ("environment" or an env file path)."""
+    return get_monocle_env_value_with_source("OKAHU_API_KEY")
 
 
 def _get_monocle_exporter() -> Optional[str]:
@@ -46,7 +51,7 @@ class OkahuSpanExporter(SpanExporterBase):
         if evaluate:
             okahu_endpoint = okahu_endpoint.replace("/trace/ingest", "/eval/ingest")
         self.endpoint = endpoint or okahu_endpoint
-        api_key, api_key_source = get_monocle_env_value_with_source("OKAHU_API_KEY")
+        api_key, api_key_source = _get_okahu_api_key()
         self._closed = False
         # HTTP status of the most recent synchronous upload, so a caller that
         # gets SpanExportResult.FAILURE can say why (None: no response, e.g. timeout).
